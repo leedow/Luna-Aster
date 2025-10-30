@@ -1,0 +1,53 @@
+# Web框架和WebSocket
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+websockets==12.0
+python-multipart==0.0.6
+
+# 异步支持
+asyncio==3.4.3
+aiofiles==23.2.1
+
+# 数据处理
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-json-logger==2.0.7
+
+# LLM集成 (可选择其中一个或多个)
+openai==1.3.7
+anthropic==0.7.7
+# transformers==4.35.2
+# torch==2.1.1
+
+# 语音识别 (ASR)
+SpeechRecognition==3.10.0
+pyaudio==0.2.11
+whisper-openai==20231117
+
+# 语音合成 (TTS)
+pyttsx3==2.90
+gTTS==2.4.0
+edge-tts==6.1.9
+
+# 音频处理
+librosa==0.10.1
+soundfile==0.12.1
+numpy==1.24.3
+
+# 配置管理
+python-dotenv==1.0.0
+pyyaml==6.0.1
+
+# 日志
+loguru==0.7.2
+
+# 工具库
+requests==2.31.0
+httpx==0.25.2
+typing-extensions==4.8.0
+
+# 开发工具
+pytest==7.4.3
+pytest-asyncio==0.21.1
+black==23.11.0
+flake8==6.1.0

@@ -1,0 +1,31 @@
+{
+  "name": "luna-aster",
+  "version": "1.0.0",
+  "description": "Desktop Virtual Character with Electron + React frontend and Python WebSocket backend",
+  "main": "frontend/public/electron.js",
+  "homepage": "./",
+  "scripts": {
+    "dev": "concurrently \"npm run frontend:dev\" \"npm run backend:dev\"",
+    "frontend:dev": "cd frontend && npm start",
+    "frontend:build": "cd frontend && npm run build",
+    "backend:dev": "cd backend && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8765",
+    "backend:install": "cd backend && pip install -r requirements.txt",
+    "electron:dev": "cd frontend && npm run electron:dev",
+    "electron:build": "cd frontend && npm run electron:build",
+    "install:all": "npm install && cd frontend && npm install && cd ../backend && pip install -r requirements.txt",
+    "build": "npm run frontend:build && npm run electron:build"
+  },
+  "keywords": [
+    "electron",
+    "react",
+    "python",
+    "websocket",
+    "virtual-character",
+    "desktop-app"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^7.6.0"
+  }
+}
