@@ -212,7 +212,7 @@ const ChatInterface: React.FC = () => {
           msg.type === MessageType.LLM_RESPONSE ? 'assistant' :
           msg.type === MessageType.SYSTEM ? 'system' :
           msg.type === MessageType.ERROR ? 'error' : 'system',
-    content: msg.content,
+    content: msg.content || '',
     timestamp: new Date(msg.timestamp)
   }));
 

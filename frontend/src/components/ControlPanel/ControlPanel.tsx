@@ -217,7 +217,7 @@ const ControlPanel: React.FC = () => {
   };
 
   const handleClearMessages = () => {
-    if (confirm('确定要清空所有消息吗？')) {
+    if (window.confirm('确定要清空所有消息吗？')) {
       clearMessages();
     }
   };

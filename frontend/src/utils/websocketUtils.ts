@@ -3,7 +3,7 @@
  * 提供连接管理、消息发送、重连机制等功能
  */
 
-import { BaseMessage, MessageType, createChatMessage, createAudioDataMessage, validateMessage } from '../types/message';
+import { BaseMessage, MessageType, createMessage, validateMessage } from '../types/message';
 
 export interface WebSocketConfig {
   url: string;
@@ -14,7 +14,7 @@ export interface WebSocketConfig {
 }
 
 export const DEFAULT_WEBSOCKET_CONFIG: WebSocketConfig = {
-  url: 'ws://localhost:8000/ws',
+  url: 'ws://localhost:8765/ws',
   reconnectInterval: 3000,
   maxReconnectAttempts: 5,
   heartbeatInterval: 30000,
@@ -132,11 +132,11 @@ export class WebSocketManager {
 
   // 便捷方法
   sendChatMessage(content: string): boolean {
-    return this.sendMessage(createChatMessage(content));
+    return this.sendMessage(createMessage.chat(content, this.clientId || ''));
   }
 
-  sendAudioData(audioData: string, format: string = 'webm'): boolean {
-    return this.sendMessage(createAudioDataMessage(audioData, format));
+  sendAudioData(audioData: string, format: string = 'webm', sampleRate: number = 44100, channels: number = 1): boolean {
+    return this.sendMessage(createMessage.audioData(audioData, format, sampleRate, channels, this.clientId || ''));
   }
 
   sendControlMessage(type: MessageType, data?: any): boolean {

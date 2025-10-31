@@ -161,6 +161,30 @@ class ASRService:
         logger.info(f"📊 批量转录完成: {len(results)} 个文件")
         return results
     
+    async def start_listening(self, client_id: str) -> Dict[str, Any]:
+        """开始语音识别监听"""
+        logger.info(f"🎤 开始为客户端 {client_id} 启动语音识别")
+        
+        # 这里可以添加实时语音识别的逻辑
+        # 目前只是返回状态确认
+        return {
+            "status": "listening",
+            "client_id": client_id,
+            "message": "语音识别已启动"
+        }
+    
+    async def stop_listening(self, client_id: str) -> Dict[str, Any]:
+        """停止语音识别监听"""
+        logger.info(f"🛑 停止客户端 {client_id} 的语音识别")
+        
+        # 这里可以添加停止实时语音识别的逻辑
+        # 目前只是返回状态确认
+        return {
+            "status": "stopped",
+            "client_id": client_id,
+            "message": "语音识别已停止"
+        }
+    
     async def health_check(self) -> Dict[str, Any]:
         """健康检查"""
         status = {

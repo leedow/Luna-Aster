@@ -183,10 +183,10 @@ class MessageHandler:
         try:
             # 处理音频数据
             if message.data and "audio_data" in message.data:
-                result = await self.asr_service.process_audio(
-                    message.data["audio_data"],
-                    message.client_id
-                )
+                # 解码 base64 音频数据
+                import base64
+                audio_data = base64.b64decode(message.data["audio_data"])
+                result = await self.asr_service.transcribe_audio(audio_data)
                 
                 if result and result.get("text"):
                     # 如果识别出文本，自动处理为聊天消息

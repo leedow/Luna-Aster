@@ -104,7 +104,9 @@ async def websocket_endpoint(websocket: WebSocket):
             timestamp=datetime.now(),
             client_id=client_id
         )
-        await websocket_manager.send_personal_message(welcome_message.dict(), websocket)
+        welcome_data = welcome_message.model_dump()
+        welcome_data['timestamp'] = welcome_data['timestamp'].isoformat()
+        await websocket_manager.send_personal_message(welcome_data, websocket)
         
         while True:
             # 接收客户端消息
@@ -112,7 +114,9 @@ async def websocket_endpoint(websocket: WebSocket):
             
             try:
                 message_data = json.loads(data)
-                message = Message(**message_data, client_id=client_id)
+                # 确保设置正确的 client_id
+                message_data['client_id'] = client_id
+                message = Message(**message_data)
                 
                 logger.info(f"📨 收到来自 {client_id} 的消息: {message.type}")
                 
@@ -121,7 +125,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 # 发送响应
                 if response:
-                    await websocket_manager.send_personal_message(response.dict(), websocket)
+                    response_data = response.model_dump()
+                    # 手动转换 datetime 为 ISO 格式字符串
+                    if 'timestamp' in response_data and response_data['timestamp']:
+                        response_data['timestamp'] = response_data['timestamp'].isoformat()
+                    await websocket_manager.send_personal_message(response_data, websocket)
                     
             except json.JSONDecodeError:
                 logger.error(f"❌ 无法解析来自 {client_id} 的消息: {data}")
@@ -131,7 +139,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     timestamp=datetime.now(),
                     client_id=client_id
                 )
-                await websocket_manager.send_personal_message(error_message.dict(), websocket)
+                error_data = error_message.model_dump()
+                error_data['timestamp'] = error_data['timestamp'].isoformat()
+                await websocket_manager.send_personal_message(error_data, websocket)
                 
             except Exception as e:
                 logger.error(f"❌ 处理消息时发生错误: {str(e)}")
@@ -141,7 +151,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     timestamp=datetime.now(),
                     client_id=client_id
                 )
-                await websocket_manager.send_personal_message(error_message.dict(), websocket)
+                error_data = error_message.model_dump()
+                error_data['timestamp'] = error_data['timestamp'].isoformat()
+                await websocket_manager.send_personal_message(error_data, websocket)
                 
     except WebSocketDisconnect:
         logger.info(f"🔌 客户端 {client_id} 已断开连接")

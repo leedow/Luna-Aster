@@ -5,30 +5,40 @@
 
 export enum MessageType {
   // 连接管理
-  CONNECTION_ESTABLISHED = 'CONNECTION_ESTABLISHED',
-  HEARTBEAT = 'HEARTBEAT',
+  CONNECTION_ESTABLISHED = 'connection_established',
+  HEARTBEAT = 'heartbeat',
   
   // 聊天消息
-  CHAT = 'CHAT',
-  LLM_RESPONSE = 'LLM_RESPONSE',
+  CHAT = 'chat',
+  LLM_RESPONSE = 'llm_response',
   
   // 语音识别
-  START_LISTENING = 'START_LISTENING',
-  STOP_LISTENING = 'STOP_LISTENING',
-  AUDIO_DATA = 'AUDIO_DATA',
-  SPEECH_RECOGNITION = 'SPEECH_RECOGNITION',
+  START_LISTENING = 'start_listening',
+  STOP_LISTENING = 'stop_listening',
+  AUDIO_DATA = 'audio_data',
+  SPEECH_RECOGNIZED = 'speech_recognized',
   
   // 语音合成
-  START_SPEAKING = 'START_SPEAKING',
-  STOP_SPEAKING = 'STOP_SPEAKING',
-  AUDIO_GENERATED = 'AUDIO_GENERATED',
+  START_SPEAKING = 'start_speaking',
+  STOP_SPEAKING = 'stop_speaking',
+  AUDIO_GENERATED = 'audio_generated',
+  
+  // LLM 相关
+  LLM_THINKING = 'llm_thinking',
   
   // 状态更新
-  STATUS_UPDATE = 'STATUS_UPDATE',
+  STATUS_UPDATE = 'status_update',
   
   // 系统消息
-  SYSTEM = 'SYSTEM',
-  ERROR = 'ERROR'
+  SYSTEM = 'system',
+  ERROR = 'error',
+  
+  // 服务状态
+  SERVICE_READY = 'service_ready',
+  SERVICE_ERROR = 'service_error',
+  
+  // 连接状态
+  CONNECTION_LOST = 'connection_lost'
 }
 
 export interface BaseMessage {
@@ -66,7 +76,7 @@ export interface AudioDataMessage extends BaseMessage {
 }
 
 export interface SpeechRecognitionMessage extends BaseMessage {
-  type: MessageType.SPEECH_RECOGNITION;
+  type: MessageType.SPEECH_RECOGNIZED;
   content: string;
   data: {
     confidence?: number;
