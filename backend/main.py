@@ -53,11 +53,7 @@ async def startup_event():
     """应用启动时的初始化"""
     logger.info("🚀 Luna-Aster 后端服务启动中...")
     
-    # 初始化各个服务
-    await llm_service.initialize()
-    await asr_service.initialize()
-    await tts_service.initialize()
-    
+    # 服务已在实例化时初始化
     logger.info("✅ 所有服务初始化完成")
 
 @app.on_event("shutdown")
@@ -65,10 +61,7 @@ async def shutdown_event():
     """应用关闭时的清理"""
     logger.info("🛑 Luna-Aster 后端服务关闭中...")
     
-    # 清理资源
-    await llm_service.cleanup()
-    await asr_service.cleanup()
-    await tts_service.cleanup()
+    # 清理WebSocket连接
     await websocket_manager.disconnect_all()
     
     logger.info("✅ 资源清理完成")
