@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
 import { useWebSocket, useVoiceControl, useConnectionStatus } from '../../contexts/WebSocketContext';
-import { AudioRecorder, AudioPlayer, audioUtils } from '../../utils/audioUtils';
+import { AudioRecorder, audioUtils, AudioChunk } from '../../utils/audioUtils';
 import { websocketUtils } from '../../utils/websocketUtils';
 
 const ControlContainer = styled.div`
@@ -142,65 +142,88 @@ const VoiceIndicator = styled.div<{ active: boolean }>`
 
 const ControlPanel: React.FC = () => {
   const [audioRecorder] = useState(() => new AudioRecorder());
-  const [audioPlayer] = useState(() => new AudioPlayer());
-  const [isRecording, setIsRecording] = useState(false);
+  const [isMonitoring, setIsMonitoring] = useState(false); // 新增：声音监听状态
   const [audioSupport, setAudioSupport] = useState(audioUtils.checkAudioSupport());
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const { connect, disconnect, clearMessages } = useWebSocket();
   const { connectionState, isConnected, stats } = useConnectionStatus();
-  const { isListening, isSpeaking, setListening, setSpeaking, sendAudioData } = useVoiceControl();
+  const { isListening, isSpeaking, setListening, setSpeaking, sendRealtimeAudioChunk } = useVoiceControl();
 
   // 检查音频支持
   useEffect(() => {
     setAudioSupport(audioUtils.checkAudioSupport());
   }, []);
 
-  // 处理录音
-  const handleStartRecording = async () => {
+  // 设置音频录制器回调
+  useEffect(() => {
+    // 设置实时音频块回调
+    audioRecorder.setRealtimeAudioChunkCallback((chunk: AudioChunk) => {
+      if (isMonitoring && isConnected) {
+        // 将ArrayBuffer转换为base64
+        const base64Data = arrayBufferToBase64(chunk.audioData);
+        // 发送实时音频数据到服务器
+        sendRealtimeAudioChunk(base64Data, 'wav', 16000, 1);
+      }
+    });
+
+    // 设置监听状态回调
+    audioRecorder.setListeningCallbacks({
+      onListeningStart: () => {
+        console.log('🎤 开始声音监听');
+        setIsMonitoring(true);
+        setListening(true);
+      },
+      onListeningStop: () => {
+        console.log('🔇 停止声音监听');
+        setIsMonitoring(false);
+        setListening(false);
+      }
+    });
+  }, [audioRecorder, isMonitoring, isConnected, sendRealtimeAudioChunk, setListening]);
+
+  // ArrayBuffer转base64的辅助函数
+  const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  };
+
+  // 处理声音监听
+  const handleStartMonitoring = async () => {
     if (!audioSupport.recording) {
       alert('您的浏览器不支持音频录制功能');
       return;
     }
 
     try {
-      await audioRecorder.startRecording();
-      setIsRecording(true);
-      setListening(true);
+      await audioRecorder.startListening();
+      console.log('✅ 声音监听已启动');
     } catch (error) {
-      console.error('启动录音失败:', error);
-      alert('无法启动录音，请检查麦克风权限');
+      console.error('启动声音监听失败:', error);
+      alert('无法启动声音监听，请检查麦克风权限');
     }
   };
 
-  const handleStopRecording = async () => {
-    if (!isRecording) return;
+  const handleStopMonitoring = async () => {
+    if (!isMonitoring) return;
 
     try {
-      const audioBlob = await audioRecorder.stopRecording();
-      const base64Data = await audioUtils.blobToBase64(audioBlob);
-      
-      // 验证音频数据
-      if (audioUtils.validateAudioData(base64Data)) {
-        sendAudioData(base64Data, 'webm');
-      } else {
-        console.warn('音频数据验证失败');
-      }
-      
-      setIsRecording(false);
-      setListening(false);
+      audioRecorder.stopListening();
+      console.log('✅ 声音监听已停止');
     } catch (error) {
-      console.error('停止录音失败:', error);
-      setIsRecording(false);
-      setListening(false);
+      console.error('停止声音监听失败:', error);
     }
   };
 
-  const handleToggleRecording = () => {
-    if (isRecording) {
-      handleStopRecording();
+  const handleToggleMonitoring = () => {
+    if (isMonitoring) {
+      handleStopMonitoring();
     } else {
-      handleStartRecording();
+      handleStartMonitoring();
     }
   };
 
@@ -249,12 +272,12 @@ const ControlPanel: React.FC = () => {
         </VoiceIndicator>
 
         <ControlButton 
-          onClick={handleToggleRecording}
-          active={isRecording}
-          variant={isRecording ? 'danger' : 'primary'}
+          onClick={handleToggleMonitoring}
+          active={isMonitoring}
+          variant={isMonitoring ? 'danger' : 'primary'}
           disabled={!isConnected || !audioSupport.recording}
         >
-          {isRecording ? '🛑 停止录音' : '🎤 开始录音'}
+          {isMonitoring ? '🛑 停止监听' : '🎤 开始监听'}
         </ControlButton>
 
         <ControlButton 

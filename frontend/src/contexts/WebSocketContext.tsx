@@ -31,6 +31,7 @@ interface WebSocketContextType {
   sendMessage: (message: BaseMessage) => boolean;
   sendChatMessage: (content: string) => boolean;
   sendAudioData: (audioData: string, format?: string) => boolean;
+  sendRealtimeAudioChunk: (audioData: string, format?: string, sampleRate?: number, channels?: number) => boolean;
   sendControlMessage: (type: MessageType, data?: any) => boolean;
   
   // 消息管理
@@ -184,6 +185,11 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     return websocketManager.sendAudioData(audioData, format);
   }, []);
 
+  // 发送实时音频块
+  const sendRealtimeAudioChunk = useCallback((audioData: string, format: string = 'wav', sampleRate: number = 16000, channels: number = 1) => {
+    return websocketManager.sendAudioData(audioData, format, sampleRate, channels);
+  }, []);
+
   const sendControlMessage = useCallback((type: MessageType, data?: any) => {
     return websocketManager.sendControlMessage(type, data);
   }, []);
@@ -232,6 +238,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     sendMessage,
     sendChatMessage,
     sendAudioData,
+    sendRealtimeAudioChunk,
     sendControlMessage,
     
     // 消息管理
@@ -295,7 +302,8 @@ export const useVoiceControl = () => {
     isSpeaking, 
     setListening, 
     setSpeaking, 
-    sendAudioData 
+    sendAudioData,
+    sendRealtimeAudioChunk
   } = useWebSocket();
   
   return {
@@ -303,6 +311,7 @@ export const useVoiceControl = () => {
     isSpeaking,
     setListening,
     setSpeaking,
-    sendAudioData
+    sendAudioData,
+    sendRealtimeAudioChunk
   };
 };
