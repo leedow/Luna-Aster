@@ -9,11 +9,12 @@ from datetime import datetime
 from loguru import logger
 
 from models.message import (
-    Message, MessageType, 
+    Message, MessageType,
     create_llm_response_message,
     create_system_message,
     create_error_message,
-    create_status_update_message
+    create_status_update_message,
+    SpeechRecognitionMessage,
 )
 from core.llm.llm_service import LLMService
 from core.asr.asr_service import ASRService
@@ -177,17 +178,22 @@ class MessageHandler:
             )
     
     async def _handle_audio_data(self, message: Message) -> Optional[Message]:
-        """处理音频数据消息"""
+        """处理音频数据消息（流式识别）"""
         logger.debug(f"🎵 收到客户端 {message.client_id} 的音频数据")
-        
+
         try:
-            # 处理音频数据
             if message.data and "audio_data" in message.data:
-                # 解码 base64 音频数据
                 import base64
                 audio_data = base64.b64decode(message.data["audio_data"])
-                result = await self.asr_service.transcribe_audio(audio_data)
-                
+
+                # 传递 client_id 与可能的语言参数，用于会话化增量识别
+                result = await self.asr_service.transcribe_audio(
+                    audio_data,
+                    client_id=message.client_id,
+                    language=message.data.get("language"),
+                    is_final=message.data.get("is_final", False),
+                )
+
                 if result and result.get("text"):
                     # 如果识别出文本，自动处理为聊天消息
                     chat_message = Message(
@@ -198,13 +204,13 @@ class MessageHandler:
                     return await self._handle_chat_message(chat_message)
             
             return None
-            
+
         except Exception as e:
             logger.error(f"❌ 处理音频数据失败: {str(e)}")
             return create_error_message(
                 f"处理音频数据失败: {str(e)}",
                 error_code="AUDIO_PROCESSING_ERROR",
-                client_id=message.client_id
+                client_id=message.client_id,
             )
     
     async def _handle_start_speaking(self, message: Message) -> Optional[Message]:

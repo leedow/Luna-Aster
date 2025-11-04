@@ -31,20 +31,8 @@ class ASRService:
     
     def _initialize_providers(self):
         """初始化ASR提供商"""
-        # 根据扁平配置创建提供商配置
-        asr_config = {
-            "whisper": {
-                "api_key": self.settings.openai_api_key,
-                "model": self.settings.whisper_model
-            },
-            "speech_recognition": {
-                "engine": "google"
-            },
-            "mock": {
-                "model": "mock-model"
-            }
-        }
-        
+        # 使用全局设置中的 ASR 配置
+        asr_config = self.settings.asr_config
         # 使用工厂创建提供商
         self.providers = ASRProviderFactory.create_providers_from_config(asr_config)
         
@@ -52,8 +40,15 @@ class ASRService:
     
     async def select_best_provider(self) -> Optional[BaseASRProvider]:
         """选择最佳可用的提供商"""
-        # 优先级顺序
-        priority_order = ["whisper", "speech_recognition", "mock"]
+        # 优先级顺序，优先使用设置中的首选提供商
+        priority_order = []
+        preferred = self.settings.asr_provider
+        if preferred:
+            priority_order.append(preferred)
+        # 追加默认优先级顺序（含 sensevoice）
+        for name in ["sensevoice", "whisper", "speech_recognition", "mock"]:
+            if name not in priority_order:
+                priority_order.append(name)
         
         for provider_name in priority_order:
             if provider_name in self.providers:

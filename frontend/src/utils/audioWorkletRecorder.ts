@@ -408,12 +408,16 @@ export class AudioWorkletRecorder {
    */
   static isSupported(): boolean {
     try {
-      return !!(
-        typeof window !== 'undefined' &&
-        window.AudioContext &&
-        AudioContext.prototype.audioWorklet &&
-        typeof AudioWorkletNode !== 'undefined'
-      );
+      if (typeof window === 'undefined') return false;
+
+      const AC: any = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!AC) return false;
+
+      // 避免直接访问 getter 导致 Illegal invocation
+      const hasAudioWorkletProp = 'audioWorklet' in (AC.prototype || {});
+      const hasAudioWorkletNode = typeof (window as any).AudioWorkletNode !== 'undefined';
+
+      return !!(hasAudioWorkletProp && hasAudioWorkletNode);
     } catch (error) {
       console.warn('AudioWorklet support check failed:', error);
       return false;

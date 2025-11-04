@@ -311,7 +311,9 @@ const ControlPanel: React.FC = () => {
         <StatsContainer>
           录音支持: {audioSupport.recording ? '✅' : '❌'}<br/>
           播放支持: {audioSupport.playback ? '✅' : '❌'}<br/>
-          支持格式: {audioSupport.formats.join(', ') || '无'}
+          支持格式: {audioSupport.formats.join(', ') || '无'}<br/>
+          AudioWorkletRecorder 支持: {audioSupport.audioWorklet ? '✅' : '❌'}<br/>
+          MediaRecorder 支持: {audioSupport.mediaRecorder ? '✅' : '❌'}
         </StatsContainer>
       </ControlSection>
 

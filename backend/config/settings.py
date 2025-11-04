@@ -27,8 +27,15 @@ class Settings(BaseSettings):
     anthropic_model: str = Field(default="claude-3-sonnet-20240229", env="ANTHROPIC_MODEL")
     
     # ASR 配置
-    asr_provider: str = Field(default="whisper", env="ASR_PROVIDER")  # whisper, speech_recognition
+    asr_provider: str = Field(default="whisper", env="ASR_PROVIDER")  # whisper, speech_recognition, sensevoice
     whisper_model: str = Field(default="base", env="WHISPER_MODEL")  # tiny, base, small, medium, large
+    # SenseVoiceSmall 配置
+    sensevoice_enabled: bool = Field(default=True, env="SENSEVOICE_ENABLED")
+    sensevoice_model: str = Field(default="iic/SenseVoiceSmall", env="SENSEVOICE_MODEL")
+    sensevoice_device: str = Field(default="cpu", env="SENSEVOICE_DEVICE")
+    sensevoice_hub: str = Field(default="ms", env="SENSEVOICE_HUB")
+    sensevoice_trust_remote_code: bool = Field(default=True, env="SENSEVOICE_TRUST_REMOTE_CODE")
+    sensevoice_vad_model: str = Field(default="fsmn-vad", env="SENSEVOICE_VAD_MODEL")
     
     # TTS 配置
     tts_provider: str = Field(default="edge", env="TTS_PROVIDER")  # edge, gtts, pyttsx3
@@ -112,6 +119,16 @@ class Settings(BaseSettings):
             },
             "speech_recognition": {
                 "enabled": True,
+                "language": self.character_language,
+                "sample_rate": self.audio_sample_rate
+            },
+            "sensevoice": {
+                "enabled": self.sensevoice_enabled,
+                "model": self.sensevoice_model,
+                "device": self.sensevoice_device,
+                "hub": self.sensevoice_hub,
+                "trust_remote_code": self.sensevoice_trust_remote_code,
+                "vad_model": self.sensevoice_vad_model,
                 "language": self.character_language,
                 "sample_rate": self.audio_sample_rate
             },

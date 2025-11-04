@@ -10,6 +10,7 @@ from .base import BaseASRProvider
 from .whisper_provider import WhisperProvider
 from .speech_recognition_provider import SpeechRecognitionProvider
 from .mock_provider import MockASRProvider
+from .sensevoice_provider import SenseVoiceSmallProvider
 
 
 class ASRProviderFactory:
@@ -19,7 +20,8 @@ class ASRProviderFactory:
     _providers: Dict[str, Type[BaseASRProvider]] = {
         "whisper": WhisperProvider,
         "speech_recognition": SpeechRecognitionProvider,
-        "mock": MockASRProvider
+        "mock": MockASRProvider,
+        "sensevoice": SenseVoiceSmallProvider,
     }
     
     @classmethod
@@ -83,6 +85,12 @@ class ASRProviderFactory:
             provider = cls.create_provider("speech_recognition", config["speech_recognition"])
             if provider:
                 providers["speech_recognition"] = provider
+
+        # SenseVoiceSmall 提供商
+        if "sensevoice" in config:
+            provider = cls.create_provider("sensevoice", config["sensevoice"])
+            if provider:
+                providers["sensevoice"] = provider
         
         # Mock提供商（总是创建）
         mock_config = config.get("mock", {"model": "mock-asr-model"})
