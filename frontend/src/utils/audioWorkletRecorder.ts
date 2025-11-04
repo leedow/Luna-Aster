@@ -1,6 +1,19 @@
 /**
  * AudioWorklet录音器
  * 支持高质量实时音频录制和持续监听模式
+ * 本文件导出以下内容：
+ * 1. AudioConfig 接口：基础音频配置（采样率、通道数、位深、格式）
+ * 2. AudioWorkletConfig 接口：继承 AudioConfig，扩展 bufferSize、chunkSize、enableRealTimeProcessing、enableNoiseReduction、enableRealtimeTransmission 等 AudioWorklet 专用配置
+ * 3. AudioChunk 接口：实时音频块结构（audioData、timestamp、chunkSize）
+ * 4. DEFAULT_WORKLET_CONFIG 常量：默认 AudioWorklet 配置对象
+ * 5. AudioWorkletRecorder 类：基于 AudioWorklet 的高性能录音器，支持：
+ *    - 高质量实时录音与暂停/继续
+ *    - 持续监听模式（低功耗实时音频流）
+ *    - 噪声抑制、自动增益
+ *    - 实时音频块回调与录音完成回调
+ *    - 动态配置更新
+ *    - 浏览器兼容性检测
+ *    主要方法：startRecording、stopRecording、startListening、stopListening、updateConfig、setAudioChunkCallback、setRealtimeAudioChunkCallback、setListeningCallbacks、getStatus、getConfig、isSupported 等
  */
 
 export interface AudioConfig {

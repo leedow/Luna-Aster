@@ -11,6 +11,7 @@
 ### 开发文档
 - **[开发指南](DEVELOPMENT.md)** - 开发环境配置和工作流程
 - **[API 文档](API.md)** - REST API 和 WebSocket 接口说明
+- **[前端音频传输流程](FRONTEND_AUDIO_FLOW.md)** - 录音到 WebSocket 发送的端到端链路
 
 ### 技术规范
 - **[通信协议](../shared/protocols.md)** - 前后端通信协议定义

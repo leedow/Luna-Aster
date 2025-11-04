@@ -1,6 +1,15 @@
 /**
  * 前端音频处理工具
  * 提供音频录制、播放、格式转换等功能，支持持续监听模式
+ * 本文件提供以下核心功能：
+ * 1. AudioRecorder：统一封装的录音器，支持 AudioWorklet 与 MediaRecorder 两种底层实现，可自动选择最优方案；
+ *    - 支持「持续监听」模式，实时回调音频块（AudioChunk）供流式识别或降噪；
+ *    - 提供切换录制器、获取状态、监听生命周期等完整 API。
+ * 2. AudioPlayer：基于 Web Audio API 的音频播放器，支持 Base64 解码与即点即播，可打断当前播放。
+ * 3. audioUtils：纯函数工具集，包含 Blob↔Base64 互转、浏览器能力检测、音频时长估算、数据合法性校验等。
+ * 4. AudioVisualizer：简易频谱可视化，连接麦克风或任意音源后可在 Canvas 上实时绘制频谱条。
+ * 
+ * 默认导出以上所有成员，方便业务层按需引入；整体采用 TypeScript 编写，类型完备，错误边界与日志齐全。
  */
 
 import { AudioWorkletRecorder, AudioWorkletConfig, DEFAULT_WORKLET_CONFIG, AudioConfig } from './audioWorkletRecorder';

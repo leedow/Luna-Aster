@@ -1,6 +1,15 @@
 /**
  * 前端 WebSocket 连接管理工具
  * 提供连接管理、消息发送、重连机制等功能
+ * 本文件导出以下核心内容：
+ * 1. WebSocketConfig 接口：WebSocket 连接配置项（地址、重连间隔、最大重连次数、心跳间隔、连接超时）。
+ * 2. DEFAULT_WEBSOCKET_CONFIG：默认配置常量。
+ * 3. ConnectionState 枚举：连接状态（未连接 / 连接中 / 已连接 / 重连中 / 错误）。
+ * 4. ConnectionStats 接口：连接统计信息（连接时间、收发消息数、重连次数等）。
+ * 5. MessageHandler & ConnectionStateHandler：消息与状态变化回调类型。
+ * 6. WebSocketManager 类：完整的连接管理、消息收发、自动重连、心跳保活、统计与事件分发。
+ * 7. websocketManager：全局单例实例，方便直接引用。
+ * 8. websocketUtils 工具对象：检测浏览器 WebSocket 支持、获取状态中文描述、格式化统计信息。
  */
 
 import { BaseMessage, MessageType, createMessage, validateMessage } from '../types/message';
