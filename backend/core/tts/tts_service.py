@@ -99,10 +99,10 @@ class TTSService:
     
     async def add_to_queue(self, text: str, client_id: str):
         """添加到合成队列"""
-        if client_id not in self.synthesis_queue:
-            self.synthesis_queue[client_id] = []
+        if client_id not in self.queue:
+            self.queue[client_id] = []
         
-        self.synthesis_queue[client_id].append({
+        self.queue[client_id].append({
             "text": text,
             "timestamp": datetime.now()
         })
@@ -111,11 +111,11 @@ class TTSService:
     
     async def process_queue(self, client_id: str) -> Optional[Dict[str, Any]]:
         """处理合成队列"""
-        if client_id not in self.synthesis_queue or not self.synthesis_queue[client_id]:
+        if client_id not in self.queue or not self.queue[client_id]:
             return None
         
         # 获取队列中的第一个项目
-        item = self.synthesis_queue[client_id].pop(0)
+        item = self.queue[client_id].pop(0)
         
         try:
             # 合成语音
@@ -127,8 +127,8 @@ class TTSService:
     
     def clear_queue(self, client_id: str):
         """清空合成队列"""
-        if client_id in self.synthesis_queue:
-            del self.synthesis_queue[client_id]
+        if client_id in self.queue:
+            del self.queue[client_id]
             logger.info(f"🧹 已清空客户端 {client_id} 的TTS队列")
     
     async def health_check(self) -> Dict[str, Any]:

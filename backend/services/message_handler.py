@@ -221,12 +221,47 @@ class MessageHandler:
         if message.client_id in self.user_sessions:
             self.user_sessions[message.client_id]["is_speaking"] = True
         
-        return create_status_update_message(
-            service="tts",
-            status="speaking",
-            details={"message": "语音合成已启动"},
-            client_id=message.client_id
-        )
+        # 校验文本
+        if not message.content or not message.content.strip():
+            return create_error_message(
+                "语音合成文本为空",
+                error_code="TTS_EMPTY_TEXT",
+                client_id=message.client_id
+            )
+        
+        try:
+            # 调用 TTS 合成
+            result = await self.tts_service.synthesize_speech(message.content, client_id=message.client_id)
+            
+            # 将二进制音频编码为 base64
+            import base64
+            audio_b64 = base64.b64encode(result.get("audio_data", b""))
+            audio_b64_str = audio_b64.decode("utf-8") if audio_b64 else ""
+            if not audio_b64_str:
+                raise Exception("生成的音频数据为空")
+            
+            # 返回前端期望的 audio_generated 消息
+            return Message(
+                type=MessageType.AUDIO_GENERATED,
+                content="audio_generated",
+                data={
+                    "audio_data": audio_b64_str,
+                    "format": result.get("format", "wav"),
+                    "text": message.content,
+                    "voice": result.get("voice"),
+                    "duration": result.get("duration"),
+                    "provider": result.get("provider"),
+                },
+                client_id=message.client_id
+            )
+        
+        except Exception as e:
+            logger.error(f"❌ 语音合成失败: {str(e)}")
+            return create_error_message(
+                f"语音合成失败: {str(e)}",
+                error_code="TTS_ERROR",
+                client_id=message.client_id
+            )
     
     async def _handle_stop_speaking(self, message: Message) -> Optional[Message]:
         """处理停止语音合成消息"""
