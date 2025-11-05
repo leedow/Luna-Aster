@@ -24,7 +24,7 @@ function createWindow() {
 
   // 加载应用
   const startUrl = isDev 
-    ? 'http://localhost:3000' 
+    ? 'http://localhost:4000' 
     : `file://${path.join(__dirname, '../build/index.html')}`;
   
   mainWindow.loadURL(startUrl);
