@@ -119,7 +119,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 message = Message(**message_data)
                 
                 logger.info(f"📨 收到来自 {client_id} 的消息: {message.type}")
-                
+
                 # 处理消息
                 response = await message_handler.handle_message(message)
                 

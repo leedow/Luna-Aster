@@ -12,6 +12,7 @@
 - **[开发指南](DEVELOPMENT.md)** - 开发环境配置和工作流程
 - **[API 文档](API.md)** - REST API 和 WebSocket 接口说明
 - **[前端音频传输流程](FRONTEND_AUDIO_FLOW.md)** - 录音到 WebSocket 发送的端到端链路
+- **[后端 ASR 处理流程](BACKEND_ASR_FLOW.md)** - WebSocket 接收音频到 ASR 识别的完整调用链路
 - **[音频实时采集与传输 FAQ](AUDIO_REALTIME_FAQ.md)** - Worklet位置、MediaRecorder实时性、PCM/WAV、后端ASR
 
 ### 技术规范

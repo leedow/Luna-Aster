@@ -181,6 +181,7 @@ class MessageHandler:
         """处理音频数据消息（流式识别）"""
         logger.debug(f"🎵 收到客户端 {message.client_id} 的音频数据")
 
+
         try:
             if message.data and "audio_data" in message.data:
                 import base64
@@ -192,6 +193,23 @@ class MessageHandler:
                     client_id=message.client_id,
                     language=message.data.get("language"),
                     is_final=message.data.get("is_final", False),
+                )
+                processing_time = result.get("processing_time")
+                logger.info(f"🎤 transcribe_audio耗时: {processing_time:.2f}s")
+
+                # 调试模式：直接返回ASR识别结果，跳过LLM和TTS
+                logger.info(f"🎤 ASR识别结果: {result.get("text"):} (调试模式，直接返回)")
+                return SpeechRecognitionMessage(
+                    content=result.get("text"),
+                    confidence=result.get("confidence"),
+                    language=result.get("language"),
+                    client_id=message.client_id,
+                    data={
+                        "provider": result.get("provider"),
+                        "model": result.get("model"),
+                        "processing_time": result.get("processing_time"),
+                        #"is_final": is_final,
+                    }
                 )
 
                 if result and result.get("text"):

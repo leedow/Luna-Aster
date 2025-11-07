@@ -9,6 +9,7 @@ SenseVoiceSmall 基于 FunASR/ModelScope 的 ASR 提供商
   https://www.modelscope.cn/models/iic/SenseVoiceSmall
 """
 
+import asyncio
 from typing import Any, Dict, Optional
 from loguru import logger
 from .base import BaseASRProvider
@@ -29,8 +30,9 @@ class SenseVoiceSmallProvider(BaseASRProvider):
         self.vad_model = config.get("vad_model", "fsmn-vad")
         self.vad_kwargs = config.get("vad_kwargs", {"max_single_segment_time": 30000})
 
-        # 延迟加载 AutoModel，避免启动时阻塞
+        # 启动时立即加载 AutoModel
         self._model = None
+        self._load_model()
         # 每个客户端维护一份缓存与缓冲区，用于流式增量解码
         self._sessions: Dict[str, Dict[str, Any]] = {}
 
@@ -43,8 +45,8 @@ class SenseVoiceSmallProvider(BaseASRProvider):
             logger.warning(f"SenseVoiceSmallProvider: funasr 未安装或不可用: {e}")
             return False
 
-    def _ensure_model(self):
-        """确保 AutoModel 已加载"""
+    def _load_model(self):
+        """在启动时加载 AutoModel"""
         if self._model is not None:
             return
         try:
@@ -69,6 +71,7 @@ class SenseVoiceSmallProvider(BaseASRProvider):
                 kwargs["vad_kwargs"] = self.vad_kwargs
 
             self._model = AutoModel(**kwargs)
+            logger.info(f"✅ SenseVoiceSmall 模型加载完成")
         except Exception as e:
             logger.error(f"❌ 加载 SenseVoiceSmall 失败: {e}")
             raise
@@ -90,6 +93,26 @@ class SenseVoiceSmallProvider(BaseASRProvider):
         if key in self._sessions:
             del self._sessions[key]
 
+    def _generate_sync(self, input_data: bytes, cache: dict, language: str):
+        """同步执行模型推理（在线程池中调用，避免阻塞事件循环）
+        
+        Args:
+            input_data: 音频字节数据
+            cache: 会话缓存对象
+            language: 语言代码
+            
+        Returns:
+            模型推理结果
+        """
+        return self._model.generate(
+            input=input_data,
+            cache=cache,
+            language=language,
+            streaming=True,
+            use_itn=True,
+            incremental=True
+        )
+
     async def transcribe_audio(self, audio_data: bytes, **kwargs) -> Dict[str, Any]:
         """增量转录音频字节（支持流式）
 
@@ -102,20 +125,26 @@ class SenseVoiceSmallProvider(BaseASRProvider):
         # is_final 在当前版本不强依赖（Stop 时由上层清理即可）
         is_final: bool = kwargs.get("is_final", False)
 
-        # 准备模型与会话
-        self._ensure_model()
+        # 确保模型已加载（启动时已加载，这里只是检查）
+        if self._model is None:
+            raise RuntimeError("SenseVoiceSmall 模型未加载")
+        
+        # 准备会话
         session = self._get_session(client_id)
         session["buffer"].extend(audio_data or b"")
 
-        # 调用 AutoModel.generate
+        # 调用 AutoModel.generate - 在线程池中执行，避免阻塞事件循环
         try:
             # 注意：FunASR 支持直接以字节流作为 input
             # 传入会话级 cache，可让模型做增量复用（如果模型支持）
-            res = self._model.generate(
-                input=bytes(session["buffer"]),
-                cache=session["cache"],
-                language=language or "auto",
-                use_itn=True,
+            # 使用线程池执行同步推理，避免阻塞 WebSocket 消息处理
+            loop = asyncio.get_event_loop()
+            res = await loop.run_in_executor(
+                None,  # 使用默认线程池
+                self._generate_sync,
+                bytes(session["buffer"]),
+                session["cache"],
+                language or "auto",
             )
 
             # 结果解析：res 典型为 List[Dict]，取第一项的 "text"

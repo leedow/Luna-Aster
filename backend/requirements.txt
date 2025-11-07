@@ -18,6 +18,9 @@ anthropic==0.7.7
 # 语音识别 (ASR)
 SpeechRecognition==3.10.0
 whisper-openai==1.0.0
+# FunASR for SenseVoice
+funasr>=1.0.0
+modelscope>=1.9.0
 
 # 语音合成 (TTS)
 pyttsx3==2.90
