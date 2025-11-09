@@ -194,13 +194,24 @@ class MessageHandler:
                     language=message.data.get("language"),
                     is_final=message.data.get("is_final", False),
                 )
+                
+                # 如果结果为None或文本为空，不返回消息（静音过滤）
+                if result is None:
+                    logger.debug(f"🎤 ASR识别结果为空（静音），跳过返回")
+                    return None
+                
+                text = result.get("text", "").strip()
+                if not text:
+                    logger.debug(f"🎤 ASR识别文本为空，跳过返回")
+                    return None
+                
                 processing_time = result.get("processing_time")
                 logger.info(f"🎤 transcribe_audio耗时: {processing_time:.2f}s")
 
                 # 调试模式：直接返回ASR识别结果，跳过LLM和TTS
-                logger.info(f"🎤 ASR识别结果: {result.get("text"):} (调试模式，直接返回)")
+                logger.info(f"🎤 ASR识别结果: {text[:50]}... (调试模式，直接返回)")
                 return SpeechRecognitionMessage(
-                    content=result.get("text"),
+                    content=text,
                     confidence=result.get("confidence"),
                     language=result.get("language"),
                     client_id=message.client_id,
@@ -208,6 +219,8 @@ class MessageHandler:
                         "provider": result.get("provider"),
                         "model": result.get("model"),
                         "processing_time": result.get("processing_time"),
+                        "is_sentence_end": result.get("is_sentence_end", False),
+                        "vad_enabled": result.get("vad_enabled", False),
                         #"is_final": is_final,
                     }
                 )

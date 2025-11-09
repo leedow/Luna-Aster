@@ -18,6 +18,7 @@ anthropic==0.7.7
 # 语音识别 (ASR)
 SpeechRecognition==3.10.0
 whisper-openai==1.0.0
+faster-whisper>=0.10.0  # Fast-Whisper
 # FunASR for SenseVoice
 funasr>=1.0.0
 modelscope>=1.9.0

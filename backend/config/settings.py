@@ -3,7 +3,8 @@
 """
 
 import os
-from typing import Optional
+import ast
+from typing import Optional, List, Union
 from pydantic import Field
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
@@ -27,7 +28,7 @@ class Settings(BaseSettings):
     anthropic_model: str = Field(default="claude-3-sonnet-20240229", env="ANTHROPIC_MODEL")
     
     # ASR 配置
-    asr_provider: str = Field(default="sensevoice", env="ASR_PROVIDER")  # whisper, speech_recognition, sensevoice
+    asr_provider: str = Field(default="paraformer_streaming", env="ASR_PROVIDER")  # whisper, speech_recognition, sensevoice, paraformer_streaming, fast_whisper
     whisper_model: str = Field(default="base", env="WHISPER_MODEL")  # tiny, base, small, medium, large
     # SenseVoiceSmall 配置
     sensevoice_enabled: bool = Field(default=True, env="SENSEVOICE_ENABLED")
@@ -36,6 +37,51 @@ class Settings(BaseSettings):
     sensevoice_hub: str = Field(default="ms", env="SENSEVOICE_HUB")
     sensevoice_trust_remote_code: bool = Field(default=True, env="SENSEVOICE_TRUST_REMOTE_CODE")
     sensevoice_vad_model: str = Field(default="fsmn-vad", env="SENSEVOICE_VAD_MODEL")
+    # VAD 参数配置
+    sensevoice_vad_max_single_segment_time: int = Field(default=30000, env="SENSEVOICE_VAD_MAX_SINGLE_SEGMENT_TIME")  # 毫秒
+    sensevoice_vad_min_single_segment_time: int = Field(default=500, env="SENSEVOICE_VAD_MIN_SINGLE_SEGMENT_TIME")  # 毫秒
+    sensevoice_vad_max_end_silence_time: int = Field(default=800, env="SENSEVOICE_VAD_MAX_END_SILENCE_TIME")  # 毫秒
+    sensevoice_vad_threshold: float = Field(default=0.5, env="SENSEVOICE_VAD_THRESHOLD")  # VAD阈值
+    # 滑动窗口配置
+    sensevoice_sliding_window_enabled: bool = Field(default=True, env="SENSEVOICE_SLIDING_WINDOW_ENABLED")  # 是否启用滑动窗口
+    sensevoice_window_size_bytes: int = Field(default=960000, env="SENSEVOICE_WINDOW_SIZE_BYTES")  # 窗口大小（字节），默认30秒
+    
+    # ParaformerStreaming 配置
+    paraformer_streaming_enabled: bool = Field(default=True, env="PARAFORMER_STREAMING_ENABLED")
+    paraformer_streaming_model: str = Field(default="paraformer-zh-streaming", env="PARAFORMER_STREAMING_MODEL")
+    paraformer_streaming_device: str = Field(default="cuda", env="PARAFORMER_STREAMING_DEVICE")
+    paraformer_streaming_hub: str = Field(default="ms", env="PARAFORMER_STREAMING_HUB")
+    paraformer_streaming_trust_remote_code: bool = Field(default=True, env="PARAFORMER_STREAMING_TRUST_REMOTE_CODE")
+    # 流式参数配置
+    paraformer_streaming_chunk_size: str = Field(default="[0,10,5]", env="PARAFORMER_STREAMING_CHUNK_SIZE")  # chunk_size，默认600ms
+    paraformer_streaming_encoder_chunk_look_back: int = Field(default=4, env="PARAFORMER_STREAMING_ENCODER_CHUNK_LOOK_BACK")  # encoder lookback
+    paraformer_streaming_decoder_chunk_look_back: int = Field(default=1, env="PARAFORMER_STREAMING_DECODER_CHUNK_LOOK_BACK")  # decoder lookback
+    # 静音检测配置
+    paraformer_streaming_silence_detection_enabled: bool = Field(default=True, env="PARAFORMER_STREAMING_SILENCE_DETECTION_ENABLED")
+    paraformer_streaming_silence_threshold: float = Field(default=0.01, env="PARAFORMER_STREAMING_SILENCE_THRESHOLD")
+    
+    # Fast-Whisper 配置
+    fast_whisper_enabled: bool = Field(default=True, env="FAST_WHISPER_ENABLED")
+    fast_whisper_model: str = Field(default="base", env="FAST_WHISPER_MODEL")  # tiny, base, small, medium, large, large-v2, large-v3
+    fast_whisper_device: str = Field(default="cuda", env="FAST_WHISPER_DEVICE")  # cpu, cuda (默认使用GPU)
+    fast_whisper_device_index: int = Field(default=0, env="FAST_WHISPER_DEVICE_INDEX")  # GPU索引
+    fast_whisper_compute_type: str = Field(default="default", env="FAST_WHISPER_COMPUTE_TYPE")  # default, float16, int8, int8_float16
+    # 识别参数
+    fast_whisper_beam_size: int = Field(default=5, env="FAST_WHISPER_BEAM_SIZE")  # beam search大小
+    fast_whisper_best_of: int = Field(default=5, env="FAST_WHISPER_BEST_OF")  # 候选数量
+    fast_whisper_patience: float = Field(default=1.0, env="FAST_WHISPER_PATIENCE")  # patience参数
+    fast_whisper_length_penalty: float = Field(default=1.0, env="FAST_WHISPER_LENGTH_PENALTY")  # 长度惩罚
+    fast_whisper_temperature: float = Field(default=0.0, env="FAST_WHISPER_TEMPERATURE")  # 温度参数
+    fast_whisper_compression_ratio_threshold: float = Field(default=2.4, env="FAST_WHISPER_COMPRESSION_RATIO_THRESHOLD")  # 压缩比阈值
+    fast_whisper_log_prob_threshold: float = Field(default=-1.0, env="FAST_WHISPER_LOG_PROB_THRESHOLD")  # 对数概率阈值
+    fast_whisper_no_speech_threshold: float = Field(default=0.6, env="FAST_WHISPER_NO_SPEECH_THRESHOLD")  # 无语音阈值
+    fast_whisper_condition_on_previous_text: bool = Field(default=True, env="FAST_WHISPER_CONDITION_ON_PREVIOUS_TEXT")  # 是否基于前文
+    fast_whisper_initial_prompt: Optional[str] = Field(default=None, env="FAST_WHISPER_INITIAL_PROMPT")  # 初始提示
+    # VAD参数
+    fast_whisper_vad_filter: bool = Field(default=False, env="FAST_WHISPER_VAD_FILTER")  # 是否启用VAD过滤
+    # 静音检测配置
+    fast_whisper_silence_detection_enabled: bool = Field(default=True, env="FAST_WHISPER_SILENCE_DETECTION_ENABLED")
+    fast_whisper_silence_threshold: float = Field(default=0.01, env="FAST_WHISPER_SILENCE_THRESHOLD")
     
     # TTS 配置
     tts_provider: str = Field(default="edge", env="TTS_PROVIDER")  # edge, gtts, pyttsx3
@@ -86,6 +132,31 @@ class Settings(BaseSettings):
         for directory in directories:
             os.makedirs(directory, exist_ok=True)
     
+    def _parse_chunk_size(self, chunk_size: Union[str, List[int]]) -> List[int]:
+        """解析chunk_size字符串为列表
+        
+        Args:
+            chunk_size: chunk_size字符串或列表
+            
+        Returns:
+            List[int]: chunk_size列表
+        """
+        if isinstance(chunk_size, list):
+            return chunk_size
+        elif isinstance(chunk_size, str):
+            try:
+                # 使用ast.literal_eval安全地解析字符串
+                parsed = ast.literal_eval(chunk_size)
+                if isinstance(parsed, list) and all(isinstance(x, int) for x in parsed):
+                    return parsed
+                else:
+                    raise ValueError(f"chunk_size必须是整数列表: {chunk_size}")
+            except (ValueError, SyntaxError) as e:
+                # 如果解析失败，使用默认值
+                return [0, 10, 5]
+        else:
+            return [0, 10, 5]  # 默认值
+    
     @property
     def llm_config(self) -> dict:
         """获取 LLM 配置"""
@@ -129,6 +200,50 @@ class Settings(BaseSettings):
                 "hub": self.sensevoice_hub,
                 "trust_remote_code": self.sensevoice_trust_remote_code,
                 "vad_model": self.sensevoice_vad_model,
+                "vad_kwargs": {
+                    "max_single_segment_time": self.sensevoice_vad_max_single_segment_time,
+                    "min_single_segment_time": self.sensevoice_vad_min_single_segment_time,
+                    "max_end_silence_time": self.sensevoice_vad_max_end_silence_time,
+                    "threshold": self.sensevoice_vad_threshold,
+                },
+                "sliding_window_enabled": self.sensevoice_sliding_window_enabled,  # 滑动窗口启用开关
+                "window_size_bytes": self.sensevoice_window_size_bytes,  # 窗口大小（字节）
+                "language": self.character_language,
+                "sample_rate": self.audio_sample_rate
+            },
+            "paraformer_streaming": {
+                "enabled": self.paraformer_streaming_enabled,
+                "model": self.paraformer_streaming_model,
+                "device": self.paraformer_streaming_device,
+                "hub": self.paraformer_streaming_hub,
+                "trust_remote_code": self.paraformer_streaming_trust_remote_code,
+                "chunk_size": self._parse_chunk_size(self.paraformer_streaming_chunk_size),  # 解析chunk_size字符串为列表
+                "encoder_chunk_look_back": self.paraformer_streaming_encoder_chunk_look_back,
+                "decoder_chunk_look_back": self.paraformer_streaming_decoder_chunk_look_back,
+                "silence_detection_enabled": self.paraformer_streaming_silence_detection_enabled,
+                "silence_threshold": self.paraformer_streaming_silence_threshold,
+                "language": self.character_language,
+                "sample_rate": self.audio_sample_rate
+            },
+            "fast_whisper": {
+                "enabled": self.fast_whisper_enabled,
+                "model": self.fast_whisper_model,
+                "device": self.fast_whisper_device,
+                "device_index": self.fast_whisper_device_index,
+                "compute_type": self.fast_whisper_compute_type,
+                "beam_size": self.fast_whisper_beam_size,
+                "best_of": self.fast_whisper_best_of,
+                "patience": self.fast_whisper_patience,
+                "length_penalty": self.fast_whisper_length_penalty,
+                "temperature": self.fast_whisper_temperature,
+                "compression_ratio_threshold": self.fast_whisper_compression_ratio_threshold,
+                "log_prob_threshold": self.fast_whisper_log_prob_threshold,
+                "no_speech_threshold": self.fast_whisper_no_speech_threshold,
+                "condition_on_previous_text": self.fast_whisper_condition_on_previous_text,
+                "initial_prompt": self.fast_whisper_initial_prompt,
+                "vad_filter": self.fast_whisper_vad_filter,
+                "silence_detection_enabled": self.fast_whisper_silence_detection_enabled,
+                "silence_threshold": self.fast_whisper_silence_threshold,
                 "language": self.character_language,
                 "sample_rate": self.audio_sample_rate
             },

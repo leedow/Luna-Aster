@@ -30,37 +30,48 @@ class ASRService:
         self._initialize_providers()
     
     def _initialize_providers(self):
-        """初始化ASR提供商"""
+        """初始化ASR提供商（只加载配置的首选提供商）"""
         # 使用全局设置中的 ASR 配置
         asr_config = self.settings.asr_config
-        # 使用工厂创建提供商
-        self.providers = ASRProviderFactory.create_providers_from_config(asr_config)
+        # 获取首选提供商
+        preferred_provider = self.settings.asr_provider
         
-        logger.info(f"🎤 已初始化ASR提供商: {list(self.providers.keys())}")
+        if not preferred_provider:
+            raise RuntimeError("❌ 未配置ASR提供商，请在配置中设置 asr_provider")
+        
+        # 只创建配置的首选提供商
+        self.providers = ASRProviderFactory.create_providers_from_config(
+            asr_config, 
+            only_preferred=True, 
+            preferred_provider=preferred_provider
+        )
+        
+        if preferred_provider not in self.providers:
+            raise RuntimeError(f"❌ 无法初始化ASR提供商: {preferred_provider}，请检查配置和依赖")
+        
+        logger.info(f"🎤 已初始化ASR提供商: {preferred_provider} (仅加载配置的提供商)")
     
     async def select_best_provider(self) -> Optional[BaseASRProvider]:
-        """选择最佳可用的提供商"""
-        # 优先级顺序，优先使用设置中的首选提供商
-        priority_order = []
+        """选择配置的ASR提供商（不使用降级逻辑）"""
         preferred = self.settings.asr_provider
-        if preferred:
-            priority_order.append(preferred)
-        # 追加默认优先级顺序（含 sensevoice）
-        for name in ["sensevoice", "whisper", "speech_recognition", "mock"]:
-            if name not in priority_order:
-                priority_order.append(name)
         
-        for provider_name in priority_order:
-            if provider_name in self.providers:
-                provider = self.providers[provider_name]
-                if await provider.is_available():
-                    logger.info(f"🎯 选择ASR提供商: {provider_name}")
-                    return provider
+        if not preferred:
+            raise RuntimeError("❌ 未配置ASR提供商，请在配置中设置 asr_provider")
         
-        logger.warning("⚠️ 没有可用的ASR提供商")
-        return None
+        # 只返回配置的提供商，不进行降级
+        if preferred not in self.providers:
+            raise RuntimeError(f"❌ ASR提供商 {preferred} 未初始化，请重启服务并检查配置")
+        
+        provider = self.providers[preferred]
+        
+        # 检查提供商是否可用
+        if not await provider.is_available():
+            raise RuntimeError(f"❌ ASR提供商 {preferred} 不可用，请检查依赖和配置。切换模型需要重启服务。")
+        
+        logger.debug(f"🎯 使用ASR提供商: {preferred}")
+        return provider
     
-    async def transcribe_audio(self, audio_data: bytes, **kwargs) -> Dict[str, Any]:
+    async def transcribe_audio(self, audio_data: bytes, **kwargs) -> Optional[Dict[str, Any]]:
         """转录音频"""
         start_time = datetime.now()
         
@@ -77,6 +88,11 @@ class ASRService:
             # 执行转录
             result = await provider.transcribe_audio(audio_data, **kwargs)
             
+            # 如果返回None，表示没有有效识别结果（静音或空文本）
+            if result is None:
+                logger.debug(f"🎤 音频转录结果为空（静音或空文本），跳过处理")
+                return None
+            
             # 添加处理时间
             processing_time = (datetime.now() - start_time).total_seconds()
             result["processing_time"] = processing_time
@@ -84,6 +100,12 @@ class ASRService:
             # 添加服务信息
             result["service"] = "ASR"
             result["timestamp"] = datetime.now().isoformat()
+            
+            # 再次检查文本是否为空（双重保险）
+            text = result.get("text", "").strip()
+            if not text:
+                logger.debug(f"🎤 转录文本为空，跳过返回")
+                return None
             
             logger.info(f"🎤 音频转录成功: {result['text'][:50]}... (用时: {processing_time:.2f}s)")
             return result
@@ -181,10 +203,12 @@ class ASRService:
         }
     
     async def health_check(self) -> Dict[str, Any]:
-        """健康检查"""
+        """健康检查（只检查配置的提供商）"""
+        preferred_provider = self.settings.asr_provider
         status = {
             "service": "ASR",
             "status": "healthy",
+            "preferred_provider": preferred_provider,
             "providers": {},
             "total_providers": len(self.providers),
             "available_providers": 0,
@@ -192,11 +216,12 @@ class ASRService:
             "temp_dir_exists": os.path.exists(self.temp_dir)
         }
         
-        # 检查每个提供商的状态
-        for name, provider in self.providers.items():
+        # 只检查配置的提供商
+        if preferred_provider and preferred_provider in self.providers:
+            provider = self.providers[preferred_provider]
             try:
                 is_available = await provider.is_available()
-                status["providers"][name] = {
+                status["providers"][preferred_provider] = {
                     "available": is_available,
                     "model": provider.model,
                     "language": provider.language,
@@ -204,16 +229,20 @@ class ASRService:
                     "provider_type": provider.get_provider_name()
                 }
                 if is_available:
-                    status["available_providers"] += 1
+                    status["available_providers"] = 1
+                else:
+                    status["status"] = "unhealthy"
+                    status["error"] = f"配置的ASR提供商 {preferred_provider} 不可用"
             except Exception as e:
-                status["providers"][name] = {
+                status["providers"][preferred_provider] = {
                     "available": False,
                     "error": str(e)
                 }
-        
-        # 如果没有可用提供商，标记为不健康
-        if status["available_providers"] == 0:
+                status["status"] = "unhealthy"
+                status["error"] = f"ASR提供商 {preferred_provider} 检查失败: {str(e)}"
+        else:
             status["status"] = "unhealthy"
+            status["error"] = f"配置的ASR提供商 {preferred_provider} 未初始化"
         
         return status
     

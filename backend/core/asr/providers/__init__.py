@@ -8,6 +8,8 @@ from .whisper_provider import WhisperProvider
 from .speech_recognition_provider import SpeechRecognitionProvider
 from .mock_provider import MockASRProvider
 from .sensevoice_provider import SenseVoiceSmallProvider
+from .paraformer_streaming_provider import ParaformerStreamingProvider
+from .fast_whisper_provider import FastWhisperProvider
 from .factory import ASRProviderFactory
 
 __all__ = [
@@ -16,5 +18,7 @@ __all__ = [
     "SpeechRecognitionProvider",
     "MockASRProvider",
     "SenseVoiceSmallProvider",
+    "ParaformerStreamingProvider",
+    "FastWhisperProvider",
     "ASRProviderFactory"
 ]
