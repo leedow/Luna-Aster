@@ -68,10 +68,10 @@ class SenseVoiceSmallProvider(BaseASRProvider):
                 if self.remote_code:
                     kwargs["remote_code"] = self.remote_code
             # 附加 VAD
-            if self.vad_model:
-                kwargs["vad_model"] = self.vad_model
-            if self.vad_kwargs:
-                kwargs["vad_kwargs"] = self.vad_kwargs
+            # if self.vad_model:
+            #     kwargs["vad_model"] = self.vad_model
+            # if self.vad_kwargs:
+            #     kwargs["vad_kwargs"] = self.vad_kwargs
 
             self._model = AutoModel(**kwargs)
 
