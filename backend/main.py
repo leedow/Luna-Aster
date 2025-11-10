@@ -53,6 +53,9 @@ async def startup_event():
     """应用启动时的初始化"""
     logger.info("🚀 Luna-Aster 后端服务启动中...")
     
+    # 设置 WebSocket 管理器到 message_handler（用于流水线发送消息）
+    message_handler.set_websocket_manager(websocket_manager)
+    
     # 服务已在实例化时初始化
     logger.info("✅ 所有服务初始化完成")
 
@@ -158,10 +161,14 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         logger.info(f"🔌 客户端 {client_id} 已断开连接")
         websocket_manager.disconnect(websocket)
+        # 清理用户会话和流水线
+        await message_handler.cleanup_user_session(client_id)
         
     except Exception as e:
         logger.error(f"❌ WebSocket 连接错误: {str(e)}")
         websocket_manager.disconnect(websocket)
+        # 清理用户会话和流水线
+        await message_handler.cleanup_user_session(client_id)
 
 @app.get("/stats")
 async def get_stats():

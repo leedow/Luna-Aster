@@ -16,7 +16,7 @@ class MockTTSProvider(BaseTTSProvider):
     
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.mock_delay = config.get("mock_delay", 1.0)  # 模拟延迟
+        self.mock_delay = config.get("mock_delay", 0)  # 模拟延迟
         self.mock_audio_size = config.get("mock_audio_size", 1024)  # 模拟音频大小
         logger.info(f"✅ Mock TTS初始化成功，语音: {self.voice}")
     

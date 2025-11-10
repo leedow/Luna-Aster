@@ -21,7 +21,7 @@ class MockLLMProvider(BaseLLMProvider):
     async def generate_response(self, prompt: str, **kwargs) -> Dict[str, Any]:
         """生成模拟回复"""
         # 模拟API调用延迟
-        await asyncio.sleep(random.uniform(0.5, 1.5))
+        #await asyncio.sleep(random.uniform(0.5, 1.5))
         
         # 模拟回复内容
         mock_responses = [

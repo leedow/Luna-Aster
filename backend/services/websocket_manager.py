@@ -5,9 +5,16 @@ WebSocket 连接管理器
 
 import json
 import uuid
+from datetime import datetime
 from typing import List, Dict, Optional
 from fastapi import WebSocket
 from loguru import logger
+
+def json_serializer(obj):
+    """JSON序列化辅助函数，处理datetime等特殊对象"""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Type {type(obj)} not serializable")
 
 class WebSocketManager:
     """WebSocket 连接管理器"""
@@ -62,7 +69,9 @@ class WebSocketManager:
     async def send_personal_message(self, message: dict, websocket: WebSocket):
         """发送个人消息"""
         try:
-            await websocket.send_text(json.dumps(message, ensure_ascii=False))
+            json_str = json.dumps(message, ensure_ascii=False, default=json_serializer)
+            await websocket.send_text(json_str)
+            logger.debug(f"✅ 消息已发送: {message.get('type', 'unknown')}")
         except Exception as e:
             logger.error(f"❌ 发送个人消息失败: {str(e)}")
             # 如果发送失败，可能连接已断开，移除该连接
@@ -73,6 +82,27 @@ class WebSocketManager:
         if client_id in self.client_connections:
             websocket = self.client_connections[client_id]
             await self.send_personal_message(message, websocket)
+        else:
+            logger.warning(f"⚠️ 客户端 {client_id} 不存在或已断开连接")
+    
+    async def send_message(self, client_id: str, message):
+        """发送消息对象给指定客户端（支持Message对象）"""
+        if client_id in self.client_connections:
+            websocket = self.client_connections[client_id]
+            # 如果是Pydantic模型或Message对象，转换为字典
+            if hasattr(message, 'model_dump'):
+                # Pydantic v2
+                message_dict = message.model_dump(exclude_none=True)
+            elif hasattr(message, 'dict'):
+                # Pydantic v1
+                message_dict = message.dict(exclude_none=True)
+            elif hasattr(message, 'to_dict'):
+                # 自定义 to_dict 方法
+                message_dict = message.to_dict()
+            else:
+                # 已经是字典
+                message_dict = message
+            await self.send_personal_message(message_dict, websocket)
         else:
             logger.warning(f"⚠️ 客户端 {client_id} 不存在或已断开连接")
     
@@ -91,7 +121,8 @@ class WebSocketManager:
                 continue
             
             try:
-                await websocket.send_text(json.dumps(message, ensure_ascii=False))
+                json_str = json.dumps(message, ensure_ascii=False, default=json_serializer)
+                await websocket.send_text(json_str)
             except Exception as e:
                 logger.error(f"❌ 广播消息给客户端 {client_id} 失败: {str(e)}")
                 invalid_connections.append(websocket)
