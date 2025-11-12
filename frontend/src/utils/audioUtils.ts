@@ -84,7 +84,7 @@ export class AudioRecorder {
     }
 
     // 默认使用MediaRecorder
-    return RecorderType.MEDIA_RECORDER;
+    return RecorderType.AUDIO_WORKLET;
   }
 
   /**
