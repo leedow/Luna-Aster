@@ -12,10 +12,9 @@ SenseVoiceSmall 基于 FunASR/ModelScope 的 ASR 提供商
 import asyncio
 import io
 import wave
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 from loguru import logger
 from .base import BaseASRProvider
-
 
 class SenseVoiceSmallProvider(BaseASRProvider):
     """SenseVoiceSmall ASR 提供商（基于 FunASR AutoModel）"""
@@ -28,13 +27,18 @@ class SenseVoiceSmallProvider(BaseASRProvider):
         self.hub = config.get("hub", "ms")  # 模型来源：ModelScope(ms) 或 HuggingFace(hf)
         self.trust_remote_code = config.get("trust_remote_code", True)
         self.remote_code = config.get("remote_code")  # 可选，通常无需设置
-        # VAD 配置（提升长音频与流式场景稳定性）
-        self.vad_model = config.get("vad_model", "fsmn-vad")
-        self.vad_kwargs = config.get("vad_kwargs", {"max_single_segment_time": 30000})
+        # VAD 配置（使用 Silero VAD）
+        self.vad_model = config.get("vad_model", "silero-vad")
+        self.vad_threshold = config.get("vad_threshold", 0.5)  # Silero VAD 阈值
+        self.vad_min_speech_duration_ms = config.get("vad_min_speech_duration_ms", 250)  # 最小语音时长
+        self.vad_max_speech_duration_s = config.get("vad_max_speech_duration_s", float('inf'))  # 最大语音时长
+        self.vad_min_silence_duration_ms = config.get("vad_min_silence_duration_ms", 100)  # 最小静音时长
 
         # 启动时立即加载 AutoModel
         self._model = None
         self._vadModel = None
+        self._vad_utils = None
+        self._vad_device = "cpu"
         self._load_model()
         # 每个客户端维护一份缓存与缓冲区，用于流式增量解码
         self._sessions: Dict[str, Dict[str, Any]] = {}
@@ -49,7 +53,7 @@ class SenseVoiceSmallProvider(BaseASRProvider):
             return False
 
     def _load_model(self):
-        """在启动时加载 AutoModel"""
+        """在启动时加载 AutoModel 和 Silero VAD"""
         if self._model is not None:
             return
         try:
@@ -67,16 +71,43 @@ class SenseVoiceSmallProvider(BaseASRProvider):
                 kwargs["trust_remote_code"] = True
                 if self.remote_code:
                     kwargs["remote_code"] = self.remote_code
-            # 附加 VAD
-            # if self.vad_model:
-            #     kwargs["vad_model"] = self.vad_model
-            # if self.vad_kwargs:
-            #     kwargs["vad_kwargs"] = self.vad_kwargs
 
             self._model = AutoModel(**kwargs)
-
-            self._vadModel = AutoModel(model="fsmn-vad")
             logger.info(f"✅ SenseVoiceSmall 模型加载完成")
+            
+            # 加载 Silero VAD
+            try:
+                import torch
+                logger.info(f"📦 加载 Silero VAD 模型...")
+                
+                # 从 torch.hub 加载 Silero VAD
+                self._vadModel, utils = torch.hub.load(
+                    repo_or_dir='snakers4/silero-vad',
+                    model='silero_vad',
+                    force_reload=False,
+                    onnx=False,
+                    source='local'
+                )
+                # 获取工具函数
+                (self._get_speech_timestamps, self._save_audio, self._read_audio, self._VADIterator, self._collect_chunks) = utils
+                # 设置设备
+                if torch.cuda.is_available() and self.device != "cpu":
+                    self._vadModel = self._vadModel.to(self.device)
+                    self._vad_device = self.device
+                    logger.info(f"✅ Silero VAD 已加载到 {self.device}")
+                else:
+                    self._vadModel = self._vadModel.to("cpu")
+                    self._vad_device = "cpu"
+                    logger.info(f"✅ Silero VAD 已加载到 CPU")
+                
+                self._vad_utils = utils
+
+                logger.info(f"✅ Silero VAD 模型加载完成")
+            except Exception as e:
+                logger.warning(f"⚠️ 加载 Silero VAD 失败: {e}，将不使用 VAD")
+                self._vadModel = None
+                self._vad_utils = None
+                
         except Exception as e:
             logger.error(f"❌ 加载 SenseVoiceSmall 失败: {e}")
             raise
@@ -85,12 +116,26 @@ class SenseVoiceSmallProvider(BaseASRProvider):
         """获取或创建客户端流式会话上下文"""
         key = client_id or "_default"
         if key not in self._sessions:
+            vad_iterator = None
+            if self._vadModel is not None and getattr(self, "_VADIterator", None):
+                vad_iterator = self._VADIterator(
+                    self._vadModel,
+                    sampling_rate=16000,
+                    # threshold=self.vad_threshold,
+                    # min_speech_duration_ms=self.vad_min_speech_duration_ms,
+                    # max_speech_duration_s=self.vad_max_speech_duration_s,
+                    # min_silence_duration_ms=self.vad_min_silence_duration_ms,
+                    # speech_pad_ms=30,
+                )
+
             self._sessions[key] = {
                 "buffer": bytearray(),  # 累积 WAV 字节
                 "cache": {},            # 传递给 AutoModel.generate 的缓存对象
-                "vad_cache": {},        # 传递给 VAD 模型的缓存对象
                 "last_text": "",
-                "last_vad_segment": None,  # 上次的VAD时间范围 [beg_ms, end_ms]
+                # Silero VAD 流式状态
+                "vad_iterator": vad_iterator,
+                "is_speech_active": False,
+                "speech_start_pos": 0,
             }
         return self._sessions[key]
 
@@ -98,6 +143,10 @@ class SenseVoiceSmallProvider(BaseASRProvider):
         """清理会话缓存与缓冲区"""
         key = client_id or "_default"
         if key in self._sessions:
+            sess = self._sessions[key]
+            vad_iterator = sess.get("vad_iterator")
+            if vad_iterator:
+                vad_iterator.reset_states()
             del self._sessions[key]
     
     def _is_segment_duplicate(self, current_segment: Tuple[int, int], last_segment: Optional[Tuple[int, int]], threshold_ms: int = 50) -> bool:
@@ -133,6 +182,102 @@ class SenseVoiceSmallProvider(BaseASRProvider):
             logger.debug(f"🔄 检测到重复时间范围: [{current_beg}ms, {current_end}ms] vs [{last_beg}ms, {last_end}ms] (差异: {beg_diff}ms, {end_diff}ms)")
         
         return is_duplicate
+    
+    def _pcm_to_numpy(self, pcm_data: bytes, sample_rate: int = 16000, channels: int = 1, sample_width: int = 2) -> Tuple[Any, int]:  # type: ignore
+        """将 PCM 字节数据直接转换为 numpy 数组
+        
+        Args:
+            pcm_data: PCM 音频字节数据（16-bit signed integer）
+            sample_rate: 采样率
+            channels: 声道数
+            sample_width: 采样宽度（字节），2 = 16-bit
+            
+        Returns:
+            (audio_array, sample_rate): numpy 数组和采样率
+        """
+        try:
+            import numpy as np
+            
+            # 根据采样宽度选择数据类型
+            if sample_width == 2:  # 16-bit
+                audio_array = np.frombuffer(pcm_data, dtype=np.int16)
+            elif sample_width == 4:  # 32-bit
+                audio_array = np.frombuffer(pcm_data, dtype=np.int32)
+            else:
+                audio_array = np.frombuffer(pcm_data, dtype=np.uint8)
+            
+            # 如果是多声道，取第一个声道
+            if channels > 1:
+                audio_array = audio_array.reshape(-1, channels)[:, 0]
+            
+            # 归一化到 [-1.0, 1.0]
+            if sample_width == 2:
+                audio_array = audio_array.astype(np.float32) / 32768.0
+            elif sample_width == 4:
+                audio_array = audio_array.astype(np.float32) / 2147483648.0
+            else:
+                audio_array = audio_array.astype(np.float32) / 128.0 - 1.0
+            
+            logger.debug(f"✅ PCM 转换成功: {len(pcm_data)}B → {len(audio_array)} 采样点, {sample_rate}Hz")
+            return audio_array, sample_rate
+        except Exception as e:
+            logger.error(f"❌ PCM 转 numpy 失败: {e}")
+            raise
+
+    def _wav_to_numpy(self, wav_data: bytes, sample_rate: int = 16000) -> Tuple[Any, int]:  # type: ignore
+        """将 WAV 字节数据转换为 numpy 数组
+        
+        Args:
+            wav_data: WAV 格式的字节数据
+            sample_rate: 目标采样率（默认 16000）
+            
+        Returns:
+            tuple: (audio_array, actual_sample_rate) numpy 数组和实际采样率
+        """
+        try:
+            import numpy as np
+            
+            # 先合并多个 WAV 块（如果有）
+            merged_wav = self._merge_wav_chunks(wav_data)
+            
+            # 读取 WAV 文件
+            wav_io = io.BytesIO(merged_wav)
+            with wave.open(wav_io, 'rb') as wav_file:
+                actual_sample_rate = wav_file.getframerate()
+                channels = wav_file.getnchannels()
+                sample_width = wav_file.getsampwidth()
+                n_frames = wav_file.getnframes()
+                frames = wav_file.readframes(n_frames)
+            
+            # 转换为 numpy 数组
+            if sample_width == 2:  # 16-bit
+                audio_array = np.frombuffer(frames, dtype=np.int16)
+            elif sample_width == 4:  # 32-bit
+                audio_array = np.frombuffer(frames, dtype=np.int32)
+            else:
+                audio_array = np.frombuffer(frames, dtype=np.uint8)
+            
+            # 如果是多声道，只取第一声道
+            if channels > 1:
+                audio_array = audio_array.reshape(-1, channels)[:, 0]
+            
+            # 转换为 float32 并归一化到 [-1, 1]
+            audio_array = audio_array.astype(np.float32) / 32768.0
+            
+            # 如果需要重采样
+            if actual_sample_rate != sample_rate:
+                # 简单的线性重采样（如果需要更高质量，可以使用 scipy.signal.resample）
+                ratio = sample_rate / actual_sample_rate
+                new_length = int(len(audio_array) * ratio)
+                indices = np.linspace(0, len(audio_array) - 1, new_length)
+                audio_array = np.interp(indices, np.arange(len(audio_array)), audio_array)
+                actual_sample_rate = sample_rate
+            
+            return audio_array, actual_sample_rate
+            
+        except Exception as e:
+            logger.error(f"❌ WAV 转 numpy 失败: {e}")
+            raise
     
     def _parse_wav_header(self, wav_data: bytes) -> Tuple[int, int, int]:
         """解析 WAV 头，获取采样率、声道数、位深度
@@ -391,7 +536,7 @@ class SenseVoiceSmallProvider(BaseASRProvider):
     async def transcribe_audio(self, audio_data: bytes, **kwargs) -> Dict[str, Any]:
         """增量转录音频字节（支持流式）
 
-        说明：前端以 WAV（含头）分块推送，此处直接累积并在每次调用时做一次增量解码。
+        说明：前端可以发送 WAV 或 PCM 格式的音频数据，此处直接累积并在每次调用时做一次增量解码。
         为避免复杂的端侧终止标记处理，这里每个块都会给出最新累计文本，前端可用作实时显示。
         """
         # 参数解析
@@ -399,6 +544,10 @@ class SenseVoiceSmallProvider(BaseASRProvider):
         language: str = kwargs.get("language", self.language)
         # is_final 在当前版本不强依赖（Stop 时由上层清理即可）
         is_final: bool = kwargs.get("is_final", False)
+        # 音频格式参数
+        audio_format: str = kwargs.get("audio_format", "pcm")  # 'wav' 或 'pcm'
+        sample_rate: int = kwargs.get("sample_rate", 16000)
+        channels: int = kwargs.get("channels", 1)
 
         # 确保模型已加载（启动时已加载，这里只是检查）
         if self._model is None:
@@ -408,130 +557,145 @@ class SenseVoiceSmallProvider(BaseASRProvider):
         session = self._get_session(client_id)
         session["buffer"].extend(audio_data or b"")
 
-        # 调用 AutoModel.generate - 在线程池中执行，避免阻塞事件循环
         try:
             loop = asyncio.get_event_loop()
             
-            # 步骤1: VAD 检测（如果启用）
-            asr_input_data = bytes(session["buffer"])  # 默认使用完整 buffer
-            has_speech = True
+            # 步骤1: Silero VAD 流式检测（如果启用）
+            asr_input_data = None  # 待 ASR 推理的音频数据
+            should_do_asr = False  # 是否执行 ASR 推理
             
-            if self._vadModel is not None and len(session["buffer"]) > 0:
-                # 先合并多个 WAV 块（如果有），确保 VAD 模型处理完整音频
-                buffer_data = bytes(session["buffer"])
-                merged_buffer = await loop.run_in_executor(
-                    None,
-                    self._merge_wav_chunks,
-                    buffer_data
-                )
-                
-                # VAD 检测：使用合并后的 buffer
-                vad_res = await loop.run_in_executor(
-                    None,
-                    self._vadModel.generate,
-                    merged_buffer
-                )
-                
-                logger.debug(f"🎤 VAD检测结果: {vad_res}")
-                if len(merged_buffer) != len(buffer_data):
-                    logger.debug(f"📦 VAD检测前合并WAV块: {len(buffer_data)}B → {len(merged_buffer)}B")
-                
-                # 解析 VAD 结果：格式为 [{'key': '...', 'value': [[beg1, end1], [beg2, end2], ...]}]
-                if isinstance(vad_res, (list, tuple)) and len(vad_res) > 0:
-                    first = vad_res[0]
-                    if isinstance(first, dict):
-                        value = first.get("value", [])
+            if self._vadModel is not None and len(audio_data) > 0:
+                try:
+                    import torch
+                    import numpy as np
+                    
+                    vad_iterator = session.get("vad_iterator")
+                    if vad_iterator is None and self._vadModel is not None and getattr(self, "_VADIterator", None):
+                        vad_iterator = self._VADIterator(
+                            self._vadModel,
+                            sampling_rate=16000,
+                            # threshold=self.vad_threshold,
+                            # min_speech_duration_ms=self.vad_min_speech_duration_ms,
+                            # max_speech_duration_s=self.vad_max_speech_duration_s,
+                            # min_silence_duration_ms=self.vad_min_silence_duration_ms,
+                            # speech_pad_ms=30,
+                        )
+                        session["vad_iterator"] = vad_iterator
+                    
+                    if vad_iterator is None:
+                        raise RuntimeError("Silero VAD 未初始化")
+                    
+                    print(audio_format)
+                    print(11111111111111111111111111111111)
+                    # 1. 将新增的音频数据转换为 numpy 数组
+                    if audio_format == "pcm":
+                        # 使用 PCM 直接转换（无需解析 WAV 头）
+                        new_audio_array, actual_sample_rate = await loop.run_in_executor(
+                            None,
+                            self._pcm_to_numpy,
+                            audio_data,
+                            sample_rate,  # 使用传入的采样率
+                            channels,
+                            2  # 16-bit PCM
+                        )
+                    else:
+                        # 使用 WAV 转换（需要解析 WAV 头）
+                        new_audio_array, actual_sample_rate = await loop.run_in_executor(
+                            None,
+                            self._wav_to_numpy,
+                            audio_data,
+                            16000  # Silero VAD 需要 16kHz
+                        )
+                    
+                    new_samples = len(new_audio_array)
+                    logger.debug(f"📊 新增音频: {new_samples} 采样点, {actual_sample_rate}Hz, 时长: {new_samples/actual_sample_rate*1000:.0f}ms")
+                    
+                    # 2. 使用 Silero VAD 流式检测
+                    if new_audio_array.size == 0:
+                        logger.debug("🎤 收到空音频块，跳过 Silero VAD 检测")
+                        chunk_tensor = None
+                    else:
+                        chunk_tensor = torch.from_numpy(new_audio_array).to(self._vad_device)
+                    
+                    if chunk_tensor is None:
+                        speech_event = None
+                    else:
+                        speech_event = vad_iterator(chunk_tensor, return_seconds=False)
+                    
+                    logger.debug(f"🎤 Silero VAD 事件: {speech_event}")
+                    
+                    current_has_speech = bool(speech_event and speech_event.get("start") is not None)
+                    
+                    if current_has_speech and not session["is_speech_active"]:
+                        # 语音开始：记录当前 buffer 位置
+                        session["is_speech_active"] = True
+                        session["speech_start_pos"] = len(session["buffer"]) - len(audio_data)
+                        logger.info(f"🟢 检测到语音开始 - 位置: {session['speech_start_pos']}B")
+                    
+                    elif speech_event and speech_event.get("end") is not None and session["is_speech_active"]:
+                        # 语音结束：提取 buffer 片段并准备 ASR 推理
+                        session["is_speech_active"] = False
+                        speech_end_pos = len(session["buffer"])
                         
-                        if value and len(value) > 0:
-                            # 获取最后一个有效片段 [beg, end]（毫秒）
-                            vad_last_segment = value[-1]
-                            if isinstance(vad_last_segment, (list, tuple)) and len(vad_last_segment) >= 2:
-                                beg_ms = int(vad_last_segment[0])
-                                end_ms = int(vad_last_segment[1])
-                                
-                                # 验证时间范围
-                                if beg_ms >= 0 and end_ms > beg_ms:
-                                    current_segment = (beg_ms, end_ms)
-                                    last_vad_segment = session.get("last_vad_segment")
-                                    
-                                    # 判断是否与上次重复
-                                    if self._is_segment_duplicate(current_segment, last_vad_segment):
-                                        logger.info(f"🔄 检测到重复时间范围: [{beg_ms}ms, {end_ms}ms]，跳过ASR推理")
-                                        # 返回上次的结果
-                                        return {
-                                            "text": session["last_text"],
-                                            "language": language or "auto",
-                                            "duration": None,
-                                            "model": self.model,
-                                            "provider": "sensevoice",
-                                            "confidence": 0.9,
-                                            "is_final": is_final,
-                                            "vad_detected": True,
-                                            "segment_duplicate": True,  # 标记为重复
-                                        }
-                                    
-                                    logger.info(f"🎤 VAD检测到有效音频片段: [{beg_ms}ms, {end_ms}ms]")
-                                    
-                                    # 裁剪对应时间范围的 BUFFER（使用合并后的 buffer）
-                                    try:
-                                        # 先合并 WAV 块，然后裁剪
-                                        merged_buffer = await loop.run_in_executor(
-                                            None,
-                                            self._merge_wav_chunks,
-                                            bytes(session["buffer"])
-                                        )
-                                        
-                                        asr_input_data = await loop.run_in_executor(
-                                            None,
-                                            self._extract_audio_segment,
-                                            merged_buffer,
-                                            beg_ms,
-                                            end_ms
-                                        )
-                                        
-                                        # 验证裁剪后的数据
-                                        if len(asr_input_data) < 44:
-                                            logger.warning(f"⚠️ 裁剪后的音频数据太短: {len(asr_input_data)}B，使用原始buffer")
-                                            asr_input_data = bytes(session["buffer"])
-                                        else:
-                                            logger.info(f"✂️ 裁剪音频: {len(session['buffer'])}B → {len(asr_input_data)}B (时间范围: {beg_ms}ms-{end_ms}ms)")
-                                        
-                                        # 更新上次的VAD时间范围
-                                        session["last_vad_segment"] = current_segment
-                                        has_speech = True
-                                    except Exception as e:
-                                        logger.error(f"❌ 音频裁剪异常: {e}，使用原始buffer")
-                                        asr_input_data = bytes(session["buffer"])
-                                        has_speech = True
-                                else:
-                                    logger.warning(f"⚠️ VAD时间范围无效: [{beg_ms}ms, {end_ms}ms]，使用原始buffer")
-                                    asr_input_data = bytes(session["buffer"])
-                                    has_speech = True
+                        logger.info(f"🔴 检测到语音结束 - 位置: {speech_end_pos}B")
+                        logger.info(f"📊 语音片段字节范围: [{session['speech_start_pos']} - {speech_end_pos}]，长度: {speech_end_pos - session['speech_start_pos']}B")
+                        
+                        # 提取语音片段
+                        try:
+                            # 从 buffer 中提取语音片段（字节范围）
+                            speech_bytes = bytes(session["buffer"][session["speech_start_pos"]:speech_end_pos])
+                            
+                            # 合并可能的多个 WAV 块
+                            merged_speech = await loop.run_in_executor(
+                                None,
+                                self._merge_wav_chunks,
+                                speech_bytes
+                            )
+                            
+                            # 验证提取的数据
+                            if len(merged_speech) >= 44 and merged_speech.startswith(b'RIFF'):
+                                asr_input_data = merged_speech
+                                should_do_asr = True
+                                logger.info(f"✅ 语音片段提取成功: {len(speech_bytes)}B → {len(merged_speech)}B")
                             else:
-                                logger.debug(f"🎤 VAD结果格式异常: {vad_last_segment}")
-                                has_speech = False
-                        else:
-                            logger.debug(f"🎤 VAD未检测到有效音频片段")
-                            has_speech = False
-                
-                # 如果未检测到语音，跳过 ASR 推理
-                if not has_speech:
-                    logger.debug(f"🎤 VAD未检测到语音，跳过ASR推理")
-                    return {
-                        "text": session["last_text"],
-                        "language": language or "auto",
-                        "duration": None,
-                        "model": self.model,
-                        "provider": "sensevoice",
-                        "confidence": 0.9,
-                        "is_final": is_final,
-                        "vad_detected": False,
-                    }
+                                logger.warning(f"⚠️ 提取的语音片段格式异常，跳过ASR推理")
+                                
+                        except Exception as e:
+                            logger.error(f"❌ 语音片段提取失败: {e}")
+                    
+                    # 如果语音仍在进行中，跳过 ASR 推理（等待语音结束）
+                    if session["is_speech_active"]:
+                        logger.debug(f"🔄 语音进行中，等待结束...")
+                        return {
+                            "text": session["last_text"],
+                            "language": language or "auto",
+                            "duration": None,
+                            "model": self.model,
+                            "provider": "sensevoice",
+                            "confidence": 0.9,
+                            "is_final": is_final,
+                            "vad_detected": True,
+                            "speech_active": True,
+                        }
+                    
+                except Exception as e:
+                    logger.error(f"❌ Silero VAD 检测失败: {e}")
+                    # 回退到非 VAD 模式
+                    asr_input_data = bytes(session["buffer"])
+                    should_do_asr = len(asr_input_data) >= 44
+            else:
+                # 未启用 VAD，使用完整 buffer
+                asr_input_data = bytes(session["buffer"])
+                should_do_asr = len(asr_input_data) >= 44
             
-            # 步骤2: ASR 推理（使用裁剪后的音频数据）
-            # 最终验证：确保输入数据有效
-            if not asr_input_data or len(asr_input_data) < 44:
-                logger.warning(f"⚠️ ASR输入数据无效: {len(asr_input_data) if asr_input_data else 0}B，跳过推理")
+            # 步骤2: ASR 推理（当检测到语音结束时）
+            if not should_do_asr or not asr_input_data or len(asr_input_data) < 44:
+                # 不需要 ASR 推理，返回上次结果
+                if not should_do_asr:
+                    logger.debug(f"⏸️ 等待语音片段完成")
+                else:
+                    logger.warning(f"⚠️ ASR输入数据无效: {len(asr_input_data) if asr_input_data else 0}B")
+                
                 return {
                     "text": session["last_text"],
                     "language": language or "auto",
@@ -540,16 +704,21 @@ class SenseVoiceSmallProvider(BaseASRProvider):
                     "provider": "sensevoice",
                     "confidence": 0.9,
                     "is_final": is_final,
-                    "vad_detected": has_speech if self._vadModel is not None else None,
+                    "vad_detected": self._vadModel is not None,
                 }
             
+            # 执行 ASR 推理
+            logger.info(f"🎯 开始ASR推理，音频大小: {len(asr_input_data)}B")
+            
             # 注意：FunASR 支持直接以字节流作为 input
-            # 传入会话级 cache，可让模型做增量复用（如果模型支持）
+            # 流式 VAD 模式下，每个语音片段使用新的 cache（独立识别）
+            asr_cache = {} if self._vadModel is not None else session["cache"]
+            
             res = await loop.run_in_executor(
                 None,  # 使用默认线程池
                 self._generate_sync,
-                asr_input_data,  # 使用裁剪后的音频数据
-                session["cache"],
+                asr_input_data,
+                asr_cache,
                 language or "auto",
             )
 
@@ -564,6 +733,18 @@ class SenseVoiceSmallProvider(BaseASRProvider):
                     text = first[0].get("text", "") or ""
 
             session["last_text"] = text
+            logger.info(f"✅ ASR识别完成: {text}")
+            
+            # 步骤3: 清除已处理的 buffer（流式 VAD 模式）
+            if self._vadModel is not None and should_do_asr:
+                # 清除整个 buffer（语音片段已处理完成）
+                session["buffer"].clear()
+                session["speech_start_pos"] = 0
+                vad_iterator = session.get("vad_iterator")
+                if vad_iterator:
+                    vad_iterator.reset_states()
+                session["cache"].clear()
+                logger.info(f"🧹 Buffer已清除，准备接收下一个语音片段")
 
             result = {
                 "text": text,
@@ -573,7 +754,8 @@ class SenseVoiceSmallProvider(BaseASRProvider):
                 "provider": "sensevoice",
                 "confidence": 0.9,
                 "is_final": is_final,
-                "vad_detected": has_speech if self._vadModel is not None else None,
+                "vad_detected": self._vadModel is not None,
+                "buffer_cleared": self._vadModel is not None and should_do_asr,
             }
             return result
 

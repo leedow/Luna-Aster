@@ -162,8 +162,8 @@ const ControlPanel: React.FC = () => {
       if (isMonitoring && isConnected) {
         // 将ArrayBuffer转换为base64
         const base64Data = arrayBufferToBase64(chunk.audioData);
-        // 发送实时音频数据到服务器
-        sendRealtimeAudioChunk(base64Data, 'wav', 16000, 1);
+        // 发送实时音频数据到服务器（PCM格式，16-bit，16kHz，单声道）
+        sendRealtimeAudioChunk(base64Data, 'pcm', 16000, 1);
       }
     });
 

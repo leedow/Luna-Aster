@@ -5,6 +5,8 @@ backend/__pycache__/
 backend/.venv/
 backend/venv/
 
+backend/snakers4
+
 # Build outputs
 frontend/build/
 frontend/dist/

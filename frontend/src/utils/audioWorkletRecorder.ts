@@ -43,7 +43,7 @@ export const DEFAULT_WORKLET_CONFIG: AudioWorkletConfig = {
   bitDepth: 16,
   format: 'wav',
   bufferSize: 4096,
-  chunkSize: 1024,
+  chunkSize: 512,
   enableRealTimeProcessing: true,
   enableNoiseReduction: true,
   enableRealtimeTransmission: true

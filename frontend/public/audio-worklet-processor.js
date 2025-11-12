@@ -11,7 +11,7 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
     this.sampleRate = 16000;
     this.channels = 1;
     this.bufferSize = 4096;
-    this.chunkSize = 1024; // 实时传输的块大小
+    this.chunkSize = 512; // 实时传输的块大小
     
     // 音频缓冲区
     this.audioBuffer = [];
@@ -77,7 +77,7 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
     
     // 发送最终的音频数据
     if (this.audioBuffer.length > 0) {
-      const audioData = this.convertToWAV(this.audioBuffer);
+      const audioData = this.convertToPCM(this.audioBuffer);
       this.port.postMessage({
         type: 'recording-stopped',
         audioData: audioData
@@ -158,7 +158,7 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
       // 当缓冲区达到一定大小时，发送数据块
       if (this.audioBuffer.length >= this.bufferSize) {
         const chunk = this.audioBuffer.splice(0, this.bufferSize);
-        const audioData = this.convertToWAV([chunk]);
+        const audioData = this.convertToPCM([chunk]);
         
         this.port.postMessage({
           type: 'audio-chunk',
@@ -175,7 +175,7 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
       // 当实时缓冲区达到块大小时，发送实时数据
       if (this.realtimeBuffer.length >= this.chunkSize) {
         const chunk = this.realtimeBuffer.splice(0, this.chunkSize);
-        const audioData = this.convertToWAV([chunk]);
+        const audioData = this.convertToPCM([chunk]);
         
         this.port.postMessage({
           type: 'realtime-audio-chunk',
@@ -213,7 +213,23 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
     return Array.from(output);
   }
 
-  // 转换为WAV格式
+  // 转换为PCM格式（16-bit signed integer）
+  convertToPCM(audioData) {
+    const flatData = audioData.flat();
+    const length = flatData.length;
+    const buffer = new ArrayBuffer(length * 2);
+    const view = new DataView(buffer);
+    
+    // 将 Float32 [-1, 1] 转换为 Int16 [-32768, 32767]
+    for (let i = 0; i < length; i++) {
+      const sample = Math.max(-1, Math.min(1, flatData[i]));
+      view.setInt16(i * 2, sample * 0x7FFF, true);
+    }
+    
+    return buffer;
+  }
+
+  // 转换为WAV格式（已弃用，保留用于兼容性）
   convertToWAV(audioData) {
     const flatData = audioData.flat();
     const length = flatData.length;

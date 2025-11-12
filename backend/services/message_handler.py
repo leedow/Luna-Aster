@@ -141,6 +141,9 @@ class MessageHandler:
                     audio_data = audio_item["audio_data"]
                     language = audio_item.get("language")
                     is_final = audio_item.get("is_final", False)
+                    audio_format = audio_item.get("audio_format", "pcm")
+                    sample_rate = audio_item.get("sample_rate", 16000)
+                    channels = audio_item.get("channels", 1)
                     
                     # 调用ASR服务识别
                     result = await self.asr_service.transcribe_audio(
@@ -148,6 +151,9 @@ class MessageHandler:
                         client_id=client_id,
                         language=language,
                         is_final=is_final,
+                        audio_format=audio_format,
+                        sample_rate=sample_rate,
+                        channels=channels,
                     )
                     
                     # 如果识别出文本，发送给前端并传递给下一阶段
@@ -546,10 +552,15 @@ class MessageHandler:
                 audio_data = base64.b64decode(message.data["audio_data"])
                 
                 # 将音频数据放入流水线队列
+                # 前端发送的字段名是 "format"，后端使用 "audio_format"
+                audio_format = message.data.get("audio_format") or message.data.get("format", "pcm")
                 audio_item = {
                     "audio_data": audio_data,
                     "language": message.data.get("language"),
                     "is_final": message.data.get("is_final", False),
+                    "audio_format": audio_format,  # 支持 "format" 和 "audio_format" 两种字段名
+                    "sample_rate": message.data.get("sample_rate", 16000),
+                    "channels": message.data.get("channels", 1),
                 }
                 
                 pipeline = self.pipelines[message.client_id]

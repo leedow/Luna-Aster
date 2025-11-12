@@ -168,7 +168,7 @@ export class AudioRecorder {
       bitDepth: this.config.bitDepth,
       format: this.config.format || 'wav',
       bufferSize: this.config.bufferSize || 4096,
-      chunkSize: this.config.chunkSize || 1024,
+      chunkSize: this.config.chunkSize || 512,
       enableRealTimeProcessing: this.config.enableRealTimeProcessing ?? true,
       enableNoiseReduction: true,
       enableRealtimeTransmission: this.config.enableRealtimeTransmission ?? true
@@ -192,7 +192,7 @@ export class AudioRecorder {
       bitDepth: this.config.bitDepth,
       format: this.config.format || 'wav',
       bufferSize: this.config.bufferSize || 4096,
-      chunkSize: this.config.chunkSize || 1024,
+      chunkSize: this.config.chunkSize || 512,
       enableRealTimeProcessing: this.config.enableRealTimeProcessing ?? true,
       enableNoiseReduction: true,
       enableRealtimeTransmission: this.config.enableRealtimeTransmission ?? true

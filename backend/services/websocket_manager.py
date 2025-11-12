@@ -68,10 +68,9 @@ class WebSocketManager:
     
     async def send_personal_message(self, message: dict, websocket: WebSocket):
         """发送个人消息"""
+        print("发送个人消息")
         try:
-            json_str = json.dumps(message, ensure_ascii=False, default=json_serializer)
-            await websocket.send_text(json_str)
-            logger.debug(f"✅ 消息已发送: {message.get('type', 'unknown')}")
+            await websocket.send_text(json.dumps(message, ensure_ascii=False))
         except Exception as e:
             logger.error(f"❌ 发送个人消息失败: {str(e)}")
             # 如果发送失败，可能连接已断开，移除该连接
@@ -121,8 +120,7 @@ class WebSocketManager:
                 continue
             
             try:
-                json_str = json.dumps(message, ensure_ascii=False, default=json_serializer)
-                await websocket.send_text(json_str)
+                await websocket.send_text(json.dumps(message, ensure_ascii=False))
             except Exception as e:
                 logger.error(f"❌ 广播消息给客户端 {client_id} 失败: {str(e)}")
                 invalid_connections.append(websocket)
