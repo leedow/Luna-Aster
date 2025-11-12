@@ -3,13 +3,14 @@
 负责处理不同类型的消息并调用相应的服务
 
 采用流水线模式（Pipeline Pattern）实现并行处理：
-    Audio Queue -> ASR Worker -> Text Queue -> LLM Worker -> Reply Queue -> TTS Worker
+    Audio Queue -> VAD Worker -> ASR Worker -> Text Queue -> LLM Worker -> Reply Queue -> TTS Worker
     
 流水线特点：
 1. 使用 asyncio.Queue 连接各个处理阶段
 2. 每个 Worker 独立运行，并行处理数据
 3. 使用 None 作为结束信号优雅终止流水线
 4. 通过 asyncio.gather 并发运行所有 Worker
+5. VAD Worker 负责检测语音片段，只将有效的语音片段传递给 ASR
 """
 
 import asyncio
@@ -28,22 +29,24 @@ from models.message import (
 from core.llm.llm_service import LLMService
 from core.asr.asr_service import ASRService
 from core.tts.tts_service import TTSService
+from core.vad.vad_service import VADService
 
 class MessageHandler:
     """消息处理器 - 流水线模式"""
     
-    def __init__(self, llm_service: LLMService, asr_service: ASRService, tts_service: TTSService):
+    def __init__(self, llm_service: LLMService, asr_service: ASRService, tts_service: TTSService, vad_service: VADService):
         self.llm_service = llm_service
         self.asr_service = asr_service
         self.tts_service = tts_service
+        self.vad_service = vad_service
         self.total_messages = 0
         
         # 用户会话状态
         self.user_sessions = {}
         
         # 流水线队列：为每个客户端维护独立的流水线
-        # client_id -> {"audio_queue": Queue, "asr_queue": Queue, "llm_queue": Queue, 
-        #              "pipeline_task": gather_coro, "tasks": [Task, Task, Task]}
+        # client_id -> {"audio_queue": Queue, "vad_queue": Queue, "asr_queue": Queue, "llm_queue": Queue, 
+        #              "pipeline_task": gather_coro, "tasks": [Task, Task, Task, Task]}
         self.pipelines: Dict[str, dict] = {}
         
         # WebSocket连接引用（用于发送流式消息）
@@ -54,23 +57,26 @@ class MessageHandler:
         self.websocket_manager = websocket_manager
     
     async def _create_pipeline(self, client_id: str):
-        """为客户端创建处理流水线：Audio -> ASR -> LLM -> TTS"""
+        """为客户端创建处理流水线：Audio -> VAD -> ASR -> LLM -> TTS"""
         if client_id in self.pipelines:
             logger.warning(f"⚠️ 客户端 {client_id} 的流水线已存在，先销毁旧的")
             await self._destroy_pipeline(client_id)
         
-        # 创建三个队列连接四个阶段（参考流水线模式）
-        q1 = asyncio.Queue()  # Audio -> ASR
-        q2 = asyncio.Queue()  # ASR -> LLM
-        q3 = asyncio.Queue()  # LLM -> TTS
+        # 创建四个队列连接五个阶段（参考流水线模式）
+        q1 = asyncio.Queue()  # Audio -> VAD
+        q2 = asyncio.Queue()  # VAD -> ASR
+        q3 = asyncio.Queue()  # ASR -> LLM
+        q4 = asyncio.Queue()  # LLM -> TTS
         
         # 为每个 worker 创建 task，然后使用 gather 收集
-        asr_task = asyncio.create_task(self._asr_worker(client_id, q1, q2))
-        llm_task = asyncio.create_task(self._llm_worker(client_id, q2, q3))
-        tts_task = asyncio.create_task(self._tts_worker(client_id, q3))
+        vad_task = asyncio.create_task(self._vad_worker(client_id, q1, q2))
+        asr_task = asyncio.create_task(self._asr_worker(client_id, q2, q3))
+        llm_task = asyncio.create_task(self._llm_worker(client_id, q3, q4))
+        tts_task = asyncio.create_task(self._tts_worker(client_id, q4))
         
         # 使用 gather 收集所有 task（用于统一等待和错误处理）
         pipeline_task = asyncio.gather(
+            vad_task,
             asr_task,
             llm_task,
             tts_task,
@@ -79,13 +85,14 @@ class MessageHandler:
         
         self.pipelines[client_id] = {
             "audio_queue": q1,
-            "asr_queue": q2,
-            "llm_queue": q3,
+            "vad_queue": q2,
+            "asr_queue": q3,
+            "llm_queue": q4,
             "pipeline_task": pipeline_task,
-            "tasks": [asr_task, llm_task, tts_task],  # 保存 task 引用以便取消
+            "tasks": [vad_task, asr_task, llm_task, tts_task],  # 保存 task 引用以便取消
         }
         
-        logger.info(f"🚀 已为客户端 {client_id} 创建处理流水线 [Audio -> ASR -> LLM -> TTS]")
+        logger.info(f"🚀 已为客户端 {client_id} 创建处理流水线 [Audio -> VAD -> ASR -> LLM -> TTS]")
     
     async def _destroy_pipeline(self, client_id: str):
         """销毁客户端的处理流水线"""
@@ -122,8 +129,70 @@ class MessageHandler:
         del self.pipelines[client_id]
         logger.info(f"🛑 已销毁客户端 {client_id} 的处理流水线")
     
+    async def _vad_worker(self, client_id: str, queue_in: asyncio.Queue, queue_out: asyncio.Queue):
+        """VAD工作协程：处理音频数据 -> 检测语音片段 -> 传递给ASR"""
+        logger.info(f"🎤 [VAD Worker] 已启动 - 客户端: {client_id}")
+        
+        try:
+            while True:
+                # 从输入队列获取音频数据
+                audio_item = await queue_in.get()
+                
+                # None 表示结束信号
+                if audio_item is None:
+                    await queue_out.put(None)
+                    break
+                
+                try:
+                    # 提取音频数据和参数
+                    audio_data = audio_item["audio_data"]
+                    language = audio_item.get("language")
+                    is_final = audio_item.get("is_final", False)
+                    audio_format = audio_item.get("audio_format", "pcm")
+                    sample_rate = audio_item.get("sample_rate", 16000)
+                    channels = audio_item.get("channels", 1)
+
+                    
+                    
+                    # 调用VAD服务进行语音活动检测
+                    result = await self.vad_service.detect_speech(
+                        audio_data,
+                        client_id=client_id,
+                        audio_format=audio_format,
+                        sample_rate=sample_rate,
+                        channels=channels,
+                        is_final=is_final,
+                    )
+                    
+                    # 如果VAD检测到有效的语音片段，传递给ASR队列
+                    if result and result.get("vad_detected") and result.get("speech_segment"):
+                        speech_segment = result["speech_segment"]
+                        logger.info(f"🎤 [VAD] 检测到语音片段: {len(speech_segment)}B")
+                        
+                        # 将检测到的语音片段传递给ASR队列
+                        await queue_out.put({
+                            "audio_data": speech_segment,
+                            "language": language,
+                            "is_final": True,  # VAD检测到的片段是完整的
+                            "audio_format": audio_format,
+                            "sample_rate": sample_rate,
+                            "channels": channels,
+                            "vad_metadata": result.get("vad_metadata", {}),
+                        })
+                    elif result and result.get("speech_active"):
+                        # 语音进行中，但还未结束，不传递给ASR
+                        logger.debug(f"🔄 [VAD] 语音进行中，等待结束...")
+                    # 如果没有检测到语音，静默丢弃（不传递给ASR）
+                
+                except Exception as e:
+                    logger.error(f"❌ [VAD Worker] 处理失败: {str(e)}")
+                    # VAD失败不影响整体流程，继续处理下一个音频块
+        
+        finally:
+            logger.info(f"🛑 [VAD Worker] 已停止 - 客户端: {client_id}")
+    
     async def _asr_worker(self, client_id: str, queue_in: asyncio.Queue, queue_out: asyncio.Queue):
-        """ASR工作协程：处理音频数据 -> 识别文本"""
+        """ASR工作协程：处理已通过VAD检测的语音片段 -> 识别文本"""
         logger.info(f"🎤 [ASR Worker] 已启动 - 客户端: {client_id}")
         
         try:
@@ -146,6 +215,7 @@ class MessageHandler:
                     channels = audio_item.get("channels", 1)
                     
                     # 调用ASR服务识别
+                    # 注意：音频已经通过VAD检测，直接进行ASR识别，跳过VAD检测
                     result = await self.asr_service.transcribe_audio(
                         audio_data,
                         client_id=client_id,
@@ -154,6 +224,7 @@ class MessageHandler:
                         audio_format=audio_format,
                         sample_rate=sample_rate,
                         channels=channels,
+                        skip_vad=True,  # 跳过VAD检测，因为已经在VAD worker中完成
                     )
                     
                     # 如果识别出文本，发送给前端并传递给下一阶段
@@ -166,10 +237,10 @@ class MessageHandler:
                             await self._send_asr_result(client_id, text, result)
                             
                             # 传递给LLM队列
-                            await queue_out.put({
-                                "text": text,
-                                "metadata": result
-                            })
+                            # await queue_out.put({
+                            #     "text": text,
+                            #     "metadata": result
+                            # })
                     
                 except Exception as e:
                     logger.error(f"❌ [ASR Worker] 处理失败: {str(e)}")
@@ -286,9 +357,11 @@ class MessageHandler:
                 payload = asr_message.dict(exclude_none=True)
 
             await self.websocket_manager.send_message_to_client(client_id, payload)
-            logger.debug(f"✅ ASR识别结果已发送给客户端 {client_id}: {text[:30]}...")
+            logger.info(f"✅ ASR识别结果已发送给客户端 {client_id}: {text[:30]}...")
+            logger.debug(f"📤 ASR消息详情: type={payload.get('type')}, content={text[:50]}, timestamp={payload.get('timestamp')}")
         except Exception as e:
             logger.error(f"❌ 发送ASR结果失败: {str(e)}")
+            logger.exception(f"❌ 发送ASR结果异常详情:")
     
     async def _send_llm_result(self, client_id: str, text: str, response: dict, processing_time: float):
         """发送LLM回复给前端"""

@@ -68,11 +68,12 @@ class WebSocketManager:
     
     async def send_personal_message(self, message: dict, websocket: WebSocket):
         """发送个人消息"""
-        print("发送个人消息")
         try:
-            await websocket.send_text(json.dumps(message, ensure_ascii=False))
+            # 使用 json_serializer 处理 datetime 等特殊对象
+            await websocket.send_text(json.dumps(message, ensure_ascii=False, default=json_serializer))
         except Exception as e:
             logger.error(f"❌ 发送个人消息失败: {str(e)}")
+            logger.error(f"❌ 消息内容: {str(message)[:200]}...")
             # 如果发送失败，可能连接已断开，移除该连接
             self.disconnect(websocket)
     
@@ -120,7 +121,7 @@ class WebSocketManager:
                 continue
             
             try:
-                await websocket.send_text(json.dumps(message, ensure_ascii=False))
+                await websocket.send_text(json.dumps(message, ensure_ascii=False, default=json_serializer))
             except Exception as e:
                 logger.error(f"❌ 广播消息给客户端 {client_id} 失败: {str(e)}")
                 invalid_connections.append(websocket)

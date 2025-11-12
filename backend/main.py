@@ -17,6 +17,7 @@ from loguru import logger
 from core.llm.llm_service import LLMService
 from core.asr.asr_service import ASRService
 from core.tts.tts_service import TTSService
+from core.vad.vad_service import VADService
 from services.websocket_manager import WebSocketManager
 from services.message_handler import MessageHandler
 from config.settings import Settings
@@ -46,7 +47,8 @@ websocket_manager = WebSocketManager()
 llm_service = LLMService(settings)
 asr_service = ASRService(settings)
 tts_service = TTSService(settings)
-message_handler = MessageHandler(llm_service, asr_service, tts_service)
+vad_service = VADService(settings)
+message_handler = MessageHandler(llm_service, asr_service, tts_service, vad_service)
 
 @app.on_event("startup")
 async def startup_event():
@@ -88,7 +90,8 @@ async def health_check():
         "services": {
             "llm": await llm_service.health_check(),
             "asr": await asr_service.health_check(),
-            "tts": await tts_service.health_check()
+            "tts": await tts_service.health_check(),
+            "vad": await vad_service.health_check()
         },
         "timestamp": datetime.now().isoformat()
     }
