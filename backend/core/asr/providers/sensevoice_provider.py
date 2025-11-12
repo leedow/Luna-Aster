@@ -59,10 +59,10 @@ class SenseVoiceSmallProvider(BaseASRProvider):
             }
             # 兼容可选 remote_code
             if self.trust_remote_code:
-                kwargs["trust_remote_code"] = True
+                kwargs["trust_remote_code"] = False
                 if self.remote_code:
                     kwargs["remote_code"] = self.remote_code
-
+            kwargs["disable_update"] = False
             self._model = AutoModel(**kwargs)
             logger.info(f"✅ SenseVoiceSmall 模型加载完成")
                 

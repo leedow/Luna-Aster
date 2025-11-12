@@ -18,7 +18,7 @@ class SileroVADProvider(BaseVADProvider):
         super().__init__(config)
         # VAD 配置
         self.model = config.get("model", "silero-vad")
-        self.device = config.get("device", "cuda")
+        self.device = 'cuda' #config.get("device", "cuda")
         self.threshold = config.get("threshold", 0.5)
         self.min_speech_duration_ms = config.get("min_speech_duration_ms", 250)
         self.max_speech_duration_s = config.get("max_speech_duration_s", float('inf'))

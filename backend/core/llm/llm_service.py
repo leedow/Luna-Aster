@@ -25,20 +25,29 @@ class LLMService:
         self._initialize_providers()
     
     def _initialize_providers(self):
+        print(44444444444444444444444444444444444)
         """初始化LLM提供商"""
         # 根据扁平配置创建提供商配置
         llm_config = {
-            "openai": {
-                "api_key": self.settings.openai_api_key,
-                "model": self.settings.openai_model
+            "qwen3": {
+                "enabled": self.settings.qwen3_enabled,
+                "model": self.settings.qwen3_model,
+                "dtype": self.settings.qwen3_dtype,
+                "device_map": self.settings.qwen3_device_map,
+                "attn_implementation": self.settings.qwen3_attn_implementation,
+                "max_new_tokens": self.settings.qwen3_max_new_tokens,
             },
-            "anthropic": {
-                "api_key": self.settings.anthropic_api_key,
-                "model": self.settings.anthropic_model
-            },
-            "mock": {
-                "model": "mock-model"
-            }
+            # "openai": {
+            #     "api_key": self.settings.openai_api_key,
+            #     "model": self.settings.openai_model
+            # },
+            # "anthropic": {
+            #     "api_key": self.settings.anthropic_api_key,
+            #     "model": self.settings.anthropic_model
+            # },
+            # "mock": {
+            #     "model": "mock-model"
+            # }
         }
         
         # 使用工厂创建提供商
@@ -48,8 +57,8 @@ class LLMService:
     
     async def select_best_provider(self) -> Optional[BaseLLMProvider]:
         """选择最佳可用的提供商"""
-        # 优先级顺序
-        priority_order = ["openai", "anthropic", "mock"]
+        # 优先级顺序（Qwen3 作为默认首选）
+        priority_order = ["qwen3", "openai", "anthropic", "mock"]
         
         for provider_name in priority_order:
             if provider_name in self.providers:

@@ -236,11 +236,11 @@ class MessageHandler:
                             # 发送ASR识别结果给前端
                             await self._send_asr_result(client_id, text, result)
                             
-                            # 传递给LLM队列
-                            # await queue_out.put({
-                            #     "text": text,
-                            #     "metadata": result
-                            # })
+                            #传递给LLM队列
+                            await queue_out.put({
+                                "text": text,
+                                "metadata": result
+                            })
                     
                 except Exception as e:
                     logger.error(f"❌ [ASR Worker] 处理失败: {str(e)}")

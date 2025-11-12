@@ -25,21 +25,21 @@ class TTSService:
         """初始化TTS提供商"""
         # 根据扁平配置创建提供商配置
         providers_config = [
-            {
-                "type": "edge_tts",
-                "voice": self.settings.tts_voice,
-                "rate": self.settings.tts_rate,
-                "pitch": self.settings.tts_pitch
-            },
-            {
-                "type": "gtts",
-                "language": "zh-cn"
-            },
-            {
-                "type": "pyttsx3",
-                "voice": "default",
-                "rate": 200
-            },
+            # {
+            #     "type": "edge_tts",
+            #     "voice": self.settings.tts_voice,
+            #     "rate": self.settings.tts_rate,
+            #     "pitch": self.settings.tts_pitch
+            # },
+            # {
+            #     "type": "gtts",
+            #     "language": "zh-cn"
+            # },
+            # {
+            #     "type": "pyttsx3",
+            #     "voice": "default",
+            #     "rate": 200
+            # },
             {
                 "type": "mock",
                 "voice": "default",

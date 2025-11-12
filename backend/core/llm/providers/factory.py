@@ -9,6 +9,7 @@ from loguru import logger
 from .base import BaseLLMProvider
 from .openai_provider import OpenAIProvider
 from .anthropic_provider import AnthropicProvider
+from .qwen3_provider import Qwen3Provider
 from .mock_provider import MockLLMProvider
 
 
@@ -19,6 +20,7 @@ class LLMProviderFactory:
     _providers = {
         "openai": OpenAIProvider,
         "anthropic": AnthropicProvider,
+        "qwen3": Qwen3Provider,
         "mock": MockLLMProvider
     }
     
@@ -96,6 +98,13 @@ class LLMProviderFactory:
             anthropic_provider = cls.create_provider("anthropic", llm_config["anthropic"])
             if anthropic_provider:
                 providers["anthropic"] = anthropic_provider
+        
+        # Qwen3提供商
+        if llm_config.get("qwen3", {}).get("enabled", True):
+            qwen3_config = llm_config.get("qwen3", {})
+            qwen3_provider = cls.create_provider("qwen3", qwen3_config)
+            if qwen3_provider:
+                providers["qwen3"] = qwen3_provider
         
         # Mock提供商（总是可用）
         mock_provider = cls.create_provider("mock", {"model": "mock-model"})

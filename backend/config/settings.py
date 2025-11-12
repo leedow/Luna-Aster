@@ -18,12 +18,21 @@ class Settings(BaseSettings):
     # 服务器配置
     host: str = Field(default="0.0.0.0", env="HOST")
     port: int = Field(default=8765, env="PORT")
-    debug: bool = Field(default=True, env="DEBUG")
+    debug: bool = Field(default=False, env="DEBUG")
     
     # LLM 配置
-    llm_provider: str = Field(default="openai", env="LLM_PROVIDER")  # openai, anthropic, local
+    llm_provider: str = Field(default="qwen3", env="LLM_PROVIDER")  # qwen3, openai, anthropic, local
+    # Qwen3 配置
+    qwen3_enabled: bool = Field(default=True, env="QWEN3_ENABLED")
+    qwen3_model: str = Field(default="Qwen/Qwen3-VL-2B-Instruct", env="QWEN3_MODEL")
+    qwen3_dtype: str = Field(default="bfloat16", env="QWEN3_DTYPE")  # auto, float16, bfloat16
+    qwen3_device_map: str = Field(default="auto", env="QWEN3_DEVICE_MAP")  # auto, cpu, cuda
+    qwen3_attn_implementation: Optional[str] = Field(default=None, env="QWEN3_ATTN_IMPLEMENTATION")  # flash_attention_2
+    qwen3_max_new_tokens: int = Field(default=512, env="QWEN3_MAX_NEW_TOKENS")
+    # OpenAI 配置
     openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-3.5-turbo", env="OPENAI_MODEL")
+    # Anthropic 配置
     anthropic_api_key: Optional[str] = Field(default=None, env="ANTHROPIC_API_KEY")
     anthropic_model: str = Field(default="claude-3-sonnet-20240229", env="ANTHROPIC_MODEL")
     

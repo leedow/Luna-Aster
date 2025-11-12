@@ -42,24 +42,42 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 初始化服务
-websocket_manager = WebSocketManager()
-llm_service = LLMService(settings)
-asr_service = ASRService(settings)
-tts_service = TTSService(settings)
-vad_service = VADService(settings)
-message_handler = MessageHandler(llm_service, asr_service, tts_service, vad_service)
+# 全局服务变量（延迟初始化）
+websocket_manager: WebSocketManager = None
+llm_service: LLMService = None
+asr_service: ASRService = None
+tts_service: TTSService = None
+vad_service: VADService = None
+message_handler: MessageHandler = None
+
+def initialize_services():
+    """初始化所有服务（只执行一次）"""
+    global websocket_manager, llm_service, asr_service, tts_service, vad_service, message_handler
+    
+    # 如果已经初始化，直接返回
+    if message_handler is not None:
+        logger.debug("服务已初始化，跳过重复初始化")
+        return
+    
+    logger.info("🚀 初始化服务...")
+    websocket_manager = WebSocketManager()
+    llm_service = LLMService(settings)
+    asr_service = ASRService(settings)
+    tts_service = TTSService(settings)
+    vad_service = VADService(settings)
+    message_handler = MessageHandler(llm_service, asr_service, tts_service, vad_service)
+    message_handler.set_websocket_manager(websocket_manager)
+    logger.info("✅ 所有服务初始化完成")
 
 @app.on_event("startup")
 async def startup_event():
     """应用启动时的初始化"""
     logger.info("🚀 Luna-Aster 后端服务启动中...")
     
-    # 设置 WebSocket 管理器到 message_handler（用于流水线发送消息）
-    message_handler.set_websocket_manager(websocket_manager)
+    # 初始化服务（确保只执行一次）
+    initialize_services()
     
-    # 服务已在实例化时初始化
-    logger.info("✅ 所有服务初始化完成")
+    logger.info("✅ 应用启动完成")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -67,24 +85,33 @@ async def shutdown_event():
     logger.info("🛑 Luna-Aster 后端服务关闭中...")
     
     # 清理WebSocket连接
-    await websocket_manager.disconnect_all()
+    if websocket_manager is not None:
+        await websocket_manager.disconnect_all()
     
     logger.info("✅ 资源清理完成")
 
 @app.get("/")
 async def root():
     """根路径，返回服务状态"""
+    # 确保服务已初始化
+    if websocket_manager is None:
+        initialize_services()
+    
     return {
         "service": "Luna-Aster Backend",
         "version": "1.0.0",
         "status": "running",
         "timestamp": datetime.now().isoformat(),
-        "connected_clients": len(websocket_manager.active_connections)
+        "connected_clients": len(websocket_manager.active_connections) if websocket_manager else 0
     }
 
 @app.get("/health")
 async def health_check():
     """健康检查端点"""
+    # 确保服务已初始化
+    if llm_service is None:
+        initialize_services()
+    
     return {
         "status": "healthy",
         "services": {
@@ -99,6 +126,10 @@ async def health_check():
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket 连接端点"""
+    # 确保服务已初始化
+    if websocket_manager is None:
+        initialize_services()
+    
     client_id = await websocket_manager.connect(websocket)
     logger.info(f"🔗 客户端 {client_id} 已连接")
     
@@ -176,9 +207,13 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.get("/stats")
 async def get_stats():
     """获取服务统计信息"""
+    # 确保服务已初始化
+    if websocket_manager is None:
+        initialize_services()
+    
     return {
         "connected_clients": len(websocket_manager.active_connections),
-        "total_messages": message_handler.total_messages,
+        "total_messages": message_handler.total_messages if message_handler else 0,
         "services_status": {
             "llm": await llm_service.health_check(),
             "asr": await asr_service.health_check(),
