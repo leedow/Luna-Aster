@@ -295,7 +295,7 @@ class MessageHandler:
             logger.info(f"🛑 [LLM Worker] 已停止 - 客户端: {client_id}")
     
     async def _tts_worker(self, client_id: str, queue_in: asyncio.Queue):
-        """TTS工作协程：处理回复文本 -> 合成语音"""
+        """TTS工作协程：处理回复文本 -> 合成语音（支持流式传输）"""
         logger.info(f"🔊 [TTS Worker] 已启动 - 客户端: {client_id}")
         
         try:
@@ -310,16 +310,33 @@ class MessageHandler:
                 try:
                     text = llm_item["text"]
                     
-                    # 调用TTS合成语音
-                    result = await self.tts_service.synthesize_speech(
-                        text,
-                        client_id=client_id
-                    )
-                    
-                    # 发送音频数据给前端
-                    if result and result.get("audio_data"):
-                        logger.info(f"🔊 [TTS] 已合成语音: {text[:30]}...")
-                        await self._send_tts_result(client_id, text, result)
+                    # 检查TTS service是否支持流式合成
+                    if hasattr(self.tts_service, 'synthesize_speech_stream'):
+                        # 使用流式合成，分段生成并实时发送
+                        logger.info(f"🔊 [TTS] 开始流式合成: {text[:30]}...")
+                        async for chunk in self.tts_service.synthesize_speech_stream(text, client_id=client_id):
+                            # 发送每个音频块给前端
+                            if chunk and chunk.get("audio_data"):
+                                # 只发送非空的音频块
+                                if len(chunk["audio_data"]) > 0:
+                                    logger.debug(f"🔊 [TTS] 发送音频块 {chunk.get('segment_index', 0)}: {len(chunk['audio_data'])}B")
+                                    await self._send_tts_result(client_id, text, chunk)
+                            
+                            # 如果是最后一段，发送结束标记
+                            if chunk.get("is_final", False):
+                                logger.info(f"🔊 [TTS] 流式合成完成: {text[:30]}...")
+                                break
+                    else:
+                        # 不支持流式，使用普通合成
+                        result = await self.tts_service.synthesize_speech(
+                            text,
+                            client_id=client_id
+                        )
+                        
+                        # 发送音频数据给前端
+                        if result and result.get("audio_data"):
+                            logger.info(f"🔊 [TTS] 已合成语音: {text[:30]}...")
+                            await self._send_tts_result(client_id, text, result)
                 
                 except Exception as e:
                     logger.error(f"❌ [TTS Worker] 处理失败: {str(e)}")
@@ -602,7 +619,7 @@ class MessageHandler:
     
     async def _handle_audio_data(self, message: Message) -> Optional[Message]:
         """处理音频数据消息 - 放入流水线队列"""
-        logger.debug(f"🎵 收到客户端 {message.client_id} 的音频数据")
+        #logger.debug(f"🎵 收到客户端 {message.client_id} 的音频数据")
 
         try:
             # 检查流水线是否已创建，如果不存在则自动创建
@@ -639,7 +656,7 @@ class MessageHandler:
                 pipeline = self.pipelines[message.client_id]
                 await pipeline["audio_queue"].put(audio_item)
                 
-                logger.debug(f"✅ 音频数据已放入流水线队列")
+                #logger.debug(f"✅ 音频数据已放入流水线队列")
             
             # 不返回消息，由worker异步处理并发送结果
             return None

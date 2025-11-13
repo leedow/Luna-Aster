@@ -11,6 +11,7 @@ from .edge_tts_provider import EdgeTTSProvider
 from .gtts_provider import GTTSProvider
 from .pyttsx3_provider import Pyttsx3Provider
 from .mock_provider import MockTTSProvider
+from .kokoro_provider import KokoroProvider
 
 
 class TTSProviderFactory:
@@ -21,7 +22,8 @@ class TTSProviderFactory:
         "edge_tts": EdgeTTSProvider,
         "gtts": GTTSProvider,
         "pyttsx3": Pyttsx3Provider,
-        "mock": MockTTSProvider
+        "mock": MockTTSProvider,
+        "kokoro": KokoroProvider
     }
     
     @classmethod

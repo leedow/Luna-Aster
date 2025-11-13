@@ -120,7 +120,7 @@ class Qwen3Provider(BaseLLMProvider):
             # 构建消息（纯文本模式）
             # Qwen3 支持多模态，但这里我们只使用文本
             # 注意：Qwen3 可能不支持 system 角色，所以将系统提示合并到用户消息中
-            system_prompt = kwargs.get("system_prompt", "你是Luna，一个友善、聪明、有趣的虚拟助手。请用自然、亲切的语调回复用户。")
+            system_prompt = kwargs.get("system_prompt", "你是Luna，一个友善、聪明、有趣的虚拟助手。请用自然、亲切的语调回复用户。请用简短的话语回复每次对话，不要重复之前的内容，必须回复中文。")
             
             # 构建完整的用户提示（包含系统提示）
             full_prompt = f"{system_prompt}\n\n用户: {prompt}\n助手:"

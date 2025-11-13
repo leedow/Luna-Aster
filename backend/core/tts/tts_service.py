@@ -25,6 +25,13 @@ class TTSService:
         """初始化TTS提供商"""
         # 根据扁平配置创建提供商配置
         providers_config = [
+            {
+                "type": "kokoro",
+                "voice": "zf_001",
+                "lang_code": "z",  # 自动检测语言
+                "language": "zh-CN",
+                "rate": 1.0
+            },
             # {
             #     "type": "edge_tts",
             #     "voice": self.settings.tts_voice,
@@ -40,12 +47,12 @@ class TTSService:
             #     "voice": "default",
             #     "rate": 200
             # },
-            {
-                "type": "mock",
-                "voice": "default",
-                "language": "zh-CN",
-                "rate": 1.0
-            }
+            # {
+            #     "type": "mock",
+            #     "voice": "default",
+            #     "language": "zh-CN",
+            #     "rate": 1.0
+            # }
         ]
         
         # 使用工厂创建提供商实例
@@ -56,7 +63,7 @@ class TTSService:
     async def select_best_provider(self) -> Optional[BaseTTSProvider]:
         """选择最佳可用的提供商"""
         # 按优先级顺序检查提供商
-        priority_order = ["EdgeTTSProvider", "GTTSProvider", "Pyttsx3Provider", "MockTTSProvider"]
+        priority_order = ["KokoroProvider"]
         
         # 首先按优先级顺序查找
         for priority_class in priority_order:
@@ -93,6 +100,57 @@ class TTSService:
             
         except Exception as e:
             logger.error(f"❌ TTS合成失败: {str(e)}")
+            # 尝试切换到备用提供商
+            self.current_provider = None
+            raise e
+    
+    async def synthesize_speech_stream(self, text: str, client_id: Optional[str] = None):
+        """
+        流式合成语音，分段生成并返回音频块
+        
+        Args:
+            text: 要合成的文本
+            client_id: 客户端ID
+            
+        Yields:
+            Dict包含音频数据和元数据
+        """
+        # 选择提供商
+        if not self.current_provider:
+            self.current_provider = await self.select_best_provider()
+        
+        if not self.current_provider:
+            raise Exception("没有可用的TTS提供商")
+        
+        try:
+            # 检查provider是否支持流式合成
+            if hasattr(self.current_provider, 'synthesize_speech_stream'):
+                # 使用流式合成
+                async for chunk in self.current_provider.synthesize_speech_stream(text):
+                    yield chunk
+            else:
+                # 不支持流式，使用普通合成并作为单个块返回
+                result = await self.current_provider.synthesize_speech(text)
+                result["is_final"] = True
+                yield result
+                # 发送结束标记
+                yield {
+                    "audio_data": b"",
+                    "format": result.get("format", "wav"),
+                    "sample_rate": result.get("sample_rate", 24000),
+                    "channels": result.get("channels", 1),
+                    "duration": 0,
+                    "text": text,
+                    "voice": result.get("voice"),
+                    "language": result.get("language"),
+                    "provider": result.get("provider"),
+                    "model": result.get("model"),
+                    "segment_index": 0,
+                    "is_final": True
+                }
+            
+        except Exception as e:
+            logger.error(f"❌ TTS流式合成失败: {str(e)}")
             # 尝试切换到备用提供商
             self.current_provider = None
             raise e

@@ -443,6 +443,10 @@ export class AudioPlayer {
     }
 
     try {
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
+
       // 解码 base64 数据
       const binaryString = atob(base64Data);
       const bytes = new Uint8Array(binaryString.length);
@@ -453,24 +457,31 @@ export class AudioPlayer {
       // 解码音频数据
       const audioBuffer = await this.audioContext.decodeAudioData(bytes.buffer);
 
-      // 停止当前播放
-      this.stopCurrentAudio();
+      return await new Promise<void>((resolve, reject) => {
+        try {
+          // 停止当前播放
+          this.stopCurrentAudio();
 
-      // 创建音频源
-      this.currentSource = this.audioContext.createBufferSource();
-      this.currentSource.buffer = audioBuffer;
-      this.currentSource.connect(this.audioContext.destination);
+          // 创建音频源
+          this.currentSource = this.audioContext!.createBufferSource();
+          this.currentSource.buffer = audioBuffer;
+          this.currentSource.connect(this.audioContext!.destination);
 
-      // 播放音频
-      this.currentSource.start();
-      console.log('🔊 开始播放音频');
+          // 播放结束后清理
+          this.currentSource.onended = () => {
+            this.currentSource = null;
+            console.log('🔇 音频播放结束');
+            resolve();
+          };
 
-      // 播放结束后清理
-      this.currentSource.onended = () => {
-        this.currentSource = null;
-        console.log('🔇 音频播放结束');
-      };
-
+          // 播放音频
+          this.currentSource.start();
+          console.log('🔊 开始播放音频');
+        } catch (error) {
+          this.currentSource = null;
+          reject(error as Error);
+        }
+      });
     } catch (error) {
       console.error('❌ 音频播放失败:', error);
       throw new Error('音频播放失败');
@@ -479,7 +490,12 @@ export class AudioPlayer {
 
   stopCurrentAudio(): void {
     if (this.currentSource) {
-      this.currentSource.stop();
+      try {
+        this.currentSource.onended = null;
+        this.currentSource.stop();
+      } catch (error) {
+        console.warn('⚠️ 停止音频时出现问题:', error);
+      }
       this.currentSource = null;
       console.log('⏹️ 停止音频播放');
     }

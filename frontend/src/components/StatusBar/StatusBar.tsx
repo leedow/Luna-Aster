@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import { useConnectionStatus, useVoiceControl } from '../../contexts/WebSocketContext';
+import { useConnectionStatus, useVoiceControl, useWebSocket } from '../../contexts/WebSocketContext';
 import { websocketUtils } from '../../utils/websocketUtils';
+import { PlayerState } from '../../utils/audioQueuePlayer';
 
 const StatusContainer = styled.div`
   display: flex;
@@ -129,6 +130,7 @@ const StatusBar: React.FC = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const { connectionState, isConnected, stats } = useConnectionStatus();
   const { isListening, isSpeaking } = useVoiceControl();
+  const { audioQueueLength, audioPlayerState, currentAudioItem } = useWebSocket();
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -185,10 +187,20 @@ const StatusBar: React.FC = () => {
         <StatusItem status={isSpeaking ? 'active' : 'inactive'}>
           TTS {isSpeaking ? '🔊' : '🔇'}
         </StatusItem>
+        
+        <StatusItem status={audioQueueLength > 0 ? 'active' : 'inactive'}>
+          队列 {audioQueueLength > 0 ? `${audioQueueLength}` : '0'}
+        </StatusItem>
 
         {isConnected && (
           <StatsInfo title={websocketUtils.formatStats(stats)}>
             📊 发送:{stats.messagesSent} 接收:{stats.messagesReceived}
+          </StatsInfo>
+        )}
+        
+        {currentAudioItem && (
+          <StatsInfo title={currentAudioItem.text}>
+            🎵 {currentAudioItem.text?.substring(0, 20) || '播放中'}...
           </StatsInfo>
         )}
       </LeftSection>

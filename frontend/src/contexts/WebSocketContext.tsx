@@ -10,7 +10,8 @@ import {
   ConnectionStats,
   websocketManager 
 } from '../utils/websocketUtils';
-import { BaseMessage, MessageType } from '../types/message';
+import { BaseMessage, MessageType, AudioGeneratedMessage } from '../types/message';
+import { audioQueuePlayer, AudioQueueItem, PlayerState } from '../utils/audioQueuePlayer';
 
 interface WebSocketContextType {
   // 连接状态
@@ -43,6 +44,14 @@ interface WebSocketContextType {
   isSpeaking: boolean;
   setListening: (listening: boolean) => void;
   setSpeaking: (speaking: boolean) => void;
+  
+  // 音频播放队列
+  audioQueueLength: number;
+  currentAudioItem: AudioQueueItem | null;
+  audioPlayerState: PlayerState;
+  stopAudioPlayback: () => void;
+  skipCurrentAudio: () => void;
+  clearAudioQueue: () => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
@@ -75,6 +84,11 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
   // 语音控制状态
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+
+  // 音频播放队列状态
+  const [audioQueueLength, setAudioQueueLength] = useState(0);
+  const [currentAudioItem, setCurrentAudioItem] = useState<AudioQueueItem | null>(null);
+  const [audioPlayerState, setAudioPlayerState] = useState<PlayerState>(PlayerState.IDLE);
 
   // 消息处理器
   const handleMessage = useCallback((message: BaseMessage) => {
@@ -120,8 +134,40 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
           setIsSpeaking(message.data.tts_active);
         }
         break;
+      
+      case MessageType.AUDIO_GENERATED:
+        // 处理音频生成消息，加入播放队列
+        handleAudioGenerated(message as AudioGeneratedMessage);
+        break;
     }
   }, [maxMessages]);
+
+  // 处理音频生成消息
+  const handleAudioGenerated = useCallback(async (message: AudioGeneratedMessage) => {
+    try {
+      const audioData = message.data?.audio_data;
+      const format = message.data?.format || 'mp3';
+      const text = message.data?.text || '';
+      const voice = message.data?.voice;
+
+      if (!audioData) {
+        console.warn('⚠️ 收到的音频数据为空');
+        return;
+      }
+
+      console.log(`📥 收到音频数据: ${text.substring(0, 50)}... (格式: ${format})`);
+
+      // 将音频加入播放队列
+      await audioQueuePlayer.enqueue({
+        audioData,
+        format,
+        text,
+        voice
+      });
+    } catch (error) {
+      console.error('❌ 处理音频生成消息失败:', error);
+    }
+  }, []);
 
   // 连接状态处理器
   const handleStateChange = useCallback((state: ConnectionState, error?: Error) => {
@@ -134,6 +180,35 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     
     // 更新统计信息
     setStats(websocketManager.getStats());
+  }, []);
+
+  // 初始化音频队列播放器
+  useEffect(() => {
+    audioQueuePlayer.setCallbacks({
+      onPlayStart: (item) => {
+        setCurrentAudioItem(item);
+        setAudioPlayerState(PlayerState.PLAYING);
+        setIsSpeaking(true);
+        console.log('🔊 开始播放:', item.text?.substring(0, 50) || item.id);
+      },
+      onPlayEnd: (item) => {
+        setCurrentAudioItem(null);
+        console.log('✅ 播放完成:', item.text?.substring(0, 50) || item.id);
+        // 检查队列是否为空
+        const status = audioQueuePlayer.getStatus();
+        if (status.queueLength === 0) {
+          setAudioPlayerState(PlayerState.IDLE);
+          setIsSpeaking(false);
+        }
+      },
+      onQueueUpdate: (length) => {
+        setAudioQueueLength(length);
+      },
+      onError: (error, item) => {
+        console.error('❌ 音频播放错误:', error, item);
+        setCurrentAudioItem(null);
+      }
+    });
   }, []);
 
   // 初始化 WebSocket 管理器
@@ -170,6 +245,8 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     websocketManager.disconnect();
     setIsListening(false);
     setIsSpeaking(false);
+    // 停止音频播放
+    audioQueuePlayer.stop();
   }, []);
 
   // 消息发送方法
@@ -219,6 +296,21 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     }
   }, [isSpeaking, sendControlMessage]);
 
+  // 音频播放控制方法
+  const stopAudioPlayback = useCallback(() => {
+    audioQueuePlayer.stop();
+    setAudioPlayerState(PlayerState.STOPPED);
+    setIsSpeaking(false);
+  }, []);
+
+  const skipCurrentAudio = useCallback(() => {
+    audioQueuePlayer.skip();
+  }, []);
+
+  const clearAudioQueue = useCallback(() => {
+    audioQueuePlayer.clearQueue();
+  }, []);
+
   const contextValue: WebSocketContextType = {
     // 连接状态
     connectionState,
@@ -249,7 +341,15 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     isListening,
     isSpeaking,
     setListening,
-    setSpeaking
+    setSpeaking,
+    
+    // 音频播放队列
+    audioQueueLength,
+    currentAudioItem,
+    audioPlayerState,
+    stopAudioPlayback,
+    skipCurrentAudio,
+    clearAudioQueue
   };
 
   return (

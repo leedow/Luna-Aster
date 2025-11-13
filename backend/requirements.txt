@@ -27,6 +27,7 @@ modelscope>=1.9.0
 pyttsx3==2.90
 gTTS==2.4.0
 edge-tts==6.1.9
+kokoro-tts>=0.1.0
 
 # 音频处理
 librosa==0.10.1
