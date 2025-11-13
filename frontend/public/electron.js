@@ -1,8 +1,9 @@
 const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('path');
-const isDev = require('electron-is-dev');
+const isDev = !app.isPackaged;
 
 let mainWindow;
+let avatarWindow;
 
 function createWindow() {
   // 创建浏览器窗口
@@ -145,6 +146,87 @@ ipcMain.handle('maximize-window', () => {
 ipcMain.handle('close-window', () => {
   if (mainWindow) {
     mainWindow.close();
+  }
+});
+
+// Avatar 悬浮窗口
+function createAvatarWindow() {
+  if (avatarWindow) {
+    return avatarWindow;
+  }
+
+  avatarWindow = new BrowserWindow({
+    width: 320,
+    height: 400,
+    minWidth: 120,
+    minHeight: 120,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: true,
+    movable: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      enableRemoteModule: false,
+      preload: path.join(__dirname, 'preload.js')
+    }
+  });
+
+  // 置顶层级更高
+  avatarWindow.setAlwaysOnTop(true, 'screen-saver');
+
+  // 加载悬浮窗口页面
+  const avatarUrl = `file://${path.join(__dirname, 'avatar.html')}`;
+  avatarWindow.loadURL(avatarUrl);
+
+  avatarWindow.on('closed', () => {
+    avatarWindow = null;
+  });
+
+  return avatarWindow;
+}
+
+ipcMain.handle('open-avatar-window', () => {
+  createAvatarWindow();
+});
+
+ipcMain.handle('close-avatar-window', () => {
+  if (avatarWindow) {
+    avatarWindow.close();
+    avatarWindow = null;
+  }
+});
+
+ipcMain.handle('toggle-avatar-window', () => {
+  if (avatarWindow) {
+    avatarWindow.close();
+    avatarWindow = null;
+  } else {
+    createAvatarWindow();
+  }
+});
+
+ipcMain.handle('avatar-resize', (event, size) => {
+  if (avatarWindow && size && typeof size.width === 'number' && typeof size.height === 'number') {
+    const w = Math.max(120, Math.floor(size.width));
+    const h = Math.max(120, Math.floor(size.height));
+    avatarWindow.setSize(w, h);
+  }
+});
+
+ipcMain.handle('avatar-move', (event, pos) => {
+  if (avatarWindow && pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
+    avatarWindow.setPosition(Math.floor(pos.x), Math.floor(pos.y));
+  }
+});
+
+ipcMain.handle('avatar-always-on-top', (event, on) => {
+  if (avatarWindow) {
+    avatarWindow.setAlwaysOnTop(!!on, 'screen-saver');
   }
 });
 

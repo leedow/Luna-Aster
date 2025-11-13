@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>虚拟人物悬浮窗口</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      overflow: hidden;
+      user-select: none;
+    }
+    #avatar-root {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      -webkit-app-region: drag; /* 整体可拖动窗口 */
+    }
+    #content {
+      position: absolute;
+      left: 0;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none; /* 内容默认不拦截鼠标，便于拖动窗口 */
+    }
+    #controls {
+      position: absolute;
+      left: 8px;
+      top: 8px;
+      background: rgba(0,0,0,0.35);
+      border-radius: 8px;
+      padding: 8px;
+      -webkit-app-region: no-drag; /* 控制区可交互 */
+      pointer-events: auto;
+      color: #fff;
+      font-size: 12px;
+    }
+    #resizer {
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      right: 6px;
+      bottom: 6px;
+      background: rgba(255,255,255,0.5);
+      border-radius: 4px;
+      cursor: se-resize;
+      -webkit-app-region: no-drag; /* 允许捕获鼠标进行自定义缩放 */
+      pointer-events: auto;
+    }
+    #img {
+      max-width: 100%;
+      max-height: 100%;
+      pointer-events: none; /* 不阻塞拖动窗口 */
+    }
+    canvas {
+      pointer-events: none;
+    }
+    .row { display: flex; gap: 6px; align-items: center; }
+    select, input[type="text"], button { font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div id="avatar-root">
+    <div id="controls">
+      <div class="row">
+        <label>类型</label>
+        <select id="type">
+          <option value="png">PNG</option>
+          <option value="gif">GIF</option>
+          <option value="webgl">WebGL</option>
+          <option value="live2d">Live2D(实验)</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>URL</label>
+        <input id="url" type="text" size="24" placeholder="资源地址或留空使用示例" />
+        <button id="apply">应用</button>
+      </div>
+      <div class="row">
+        <button id="toggleAlwaysOnTop">切换置顶</button>
+        <button id="close">关闭窗口</button>
+      </div>
+    </div>
+    <div id="content"></div>
+    <div id="resizer" title="拖动以调整窗口大小"></div>
+  </div>
+  <script src="./avatar.js"></script>
+</body>
+</html>

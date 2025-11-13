@@ -2,11 +2,21 @@ import React, { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
 import { useMessaging, useConnectionStatus } from '../../contexts/WebSocketContext';
 import { MessageType } from '../../types/message';
+import { useVideoCapture } from '../../contexts/VideoCaptureContext';
 
 interface DisplayMessage {
   id: string;
   type: 'user' | 'assistant' | 'system' | 'error';
   content: string;
+  timestamp: Date;
+}
+
+interface DisplayItem {
+  id: string;
+  kind: 'text' | 'image';
+  type: 'user' | 'assistant' | 'system' | 'error';
+  content?: string;
+  imageUrl?: string;
   timestamp: Date;
 }
 
@@ -107,6 +117,12 @@ const MessageContent = styled.div`
   line-height: 1.4;
 `;
 
+const ScreenshotImage = styled.img`
+  max-width: 100%;
+  border-radius: 8px;
+  display: block;
+`;
+
 const MessageTime = styled.div`
   font-size: 11px;
   opacity: 0.7;
@@ -204,6 +220,7 @@ const ChatInterface: React.FC = () => {
   
   const { messages, sendChatMessage } = useMessaging();
   const { isConnected } = useConnectionStatus();
+  const { capturedImages } = useVideoCapture();
 
   // 转换消息格式用于显示
   const displayMessages: DisplayMessage[] = messages.map(msg => ({
@@ -216,13 +233,32 @@ const ChatInterface: React.FC = () => {
     timestamp: new Date(msg.timestamp)
   }));
 
+  const imageItems: DisplayItem[] = capturedImages.map(img => ({
+    id: `img-${img.id}`,
+    kind: 'image',
+    type: 'system',
+    imageUrl: img.dataUrl,
+    timestamp: new Date(img.capturedAt)
+  }));
+
+  const textItems: DisplayItem[] = displayMessages.map(m => ({
+    id: m.id,
+    kind: 'text',
+    type: m.type,
+    content: m.content,
+    timestamp: m.timestamp
+  }));
+
+  const combinedItems: DisplayItem[] = [...textItems, ...imageItems]
+    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   useEffect(() => {
     scrollToBottom();
-  }, [displayMessages]);
+  }, [combinedItems]);
 
   const handleSendMessage = () => {
     if (inputValue.trim() && isConnected) {
@@ -248,7 +284,7 @@ const ChatInterface: React.FC = () => {
       </ChatHeader>
       
       <MessagesContainer>
-        {displayMessages.length === 0 ? (
+        {combinedItems.length === 0 ? (
           <EmptyState>
             <div className="icon">🌙</div>
             <div className="text">欢迎使用 Luna-Aster</div>
@@ -257,12 +293,23 @@ const ChatInterface: React.FC = () => {
             </div>
           </EmptyState>
         ) : (
-          displayMessages.map((message) => (
-            <MessageBubble key={message.id} messageType={message.type}>
-              <MessageContent>{message.content}</MessageContent>
-              <MessageTime>
-                {message.timestamp.toLocaleTimeString()}
-              </MessageTime>
+          combinedItems.map((item) => (
+            <MessageBubble key={item.id} messageType={item.type}>
+              {item.kind === 'image' ? (
+                <>
+                  <ScreenshotImage src={item.imageUrl} alt="自动截图" />
+                  <MessageTime>
+                    {item.timestamp.toLocaleTimeString()}
+                  </MessageTime>
+                </>
+              ) : (
+                <>
+                  <MessageContent>{item.content}</MessageContent>
+                  <MessageTime>
+                    {item.timestamp.toLocaleTimeString()}
+                  </MessageTime>
+                </>
+              )}
             </MessageBubble>
           ))
         )}

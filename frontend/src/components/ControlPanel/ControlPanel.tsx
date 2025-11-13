@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { useWebSocket, useVoiceControl, useConnectionStatus } from '../../contexts/WebSocketContext';
 import { AudioRecorder, audioUtils, AudioChunk } from '../../utils/audioUtils';
 import { websocketUtils } from '../../utils/websocketUtils';
+import VideoInputControl from './VideoInputControl';
 
 const ControlContainer = styled.div`
   display: flex;
@@ -297,6 +298,35 @@ const ControlPanel: React.FC = () => {
             height={60}
           />
         )}
+      </ControlSection>
+
+      {/* 视频输入控制：放在语音控制下面 */}
+      <VideoInputControl />
+
+      <ControlSection>
+        <SectionTitle>🪄 虚拟人物悬浮窗口</SectionTitle>
+        <ControlButton 
+          onClick={() => {
+            if ((window as any).electronAPI?.openAvatarWindow) {
+              (window as any).electronAPI.openAvatarWindow();
+            } else {
+              alert('请在 Electron 模式下使用该功能');
+            }
+          }}
+          variant="primary"
+        >
+          打开悬浮窗口
+        </ControlButton>
+        <ControlButton 
+          onClick={() => {
+            if ((window as any).electronAPI?.closeAvatarWindow) {
+              (window as any).electronAPI.closeAvatarWindow();
+            }
+          }}
+          variant="secondary"
+        >
+          关闭悬浮窗口
+        </ControlButton>
       </ControlSection>
 
       <ControlSection>

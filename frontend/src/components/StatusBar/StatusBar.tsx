@@ -140,19 +140,19 @@ const StatusBar: React.FC = () => {
 
   const handleMinimize = () => {
     if (window.electronAPI) {
-      window.electronAPI.minimize();
+      window.electronAPI.minimizeWindow();
     }
   };
 
   const handleMaximize = () => {
     if (window.electronAPI) {
-      window.electronAPI.maximize();
+      window.electronAPI.maximizeWindow();
     }
   };
 
   const handleClose = () => {
     if (window.electronAPI) {
-      window.electronAPI.close();
+      window.electronAPI.closeWindow();
     }
   };
 
