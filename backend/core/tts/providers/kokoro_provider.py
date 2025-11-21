@@ -20,7 +20,7 @@ class KokoroProvider(BaseTTSProvider):
         super().__init__(config)
         self.model = None
         self.pipeline = None
-        self.lang_code = config.get("lang_code", "z")  # 默认语言代码
+        self.lang_code = "z" #config.get("lang_code", "z")  # 默认语言代码
         self.voice = config.get("voice", "zf_001")  # 默认语音
         self.sample_rate = 24000  # Kokoro默认采样率
         self.repo_id = config.get("repo_id", "hexgrad/Kokoro-82M-v1.1-zh")
@@ -67,7 +67,7 @@ class KokoroProvider(BaseTTSProvider):
         return self.pipeline is not None
     
     async def synthesize_speech(self, text: str, **kwargs) -> Dict[str, Any]:
-        #text = "美国只是一只纸老虎，我们中国人民不怕！"
+        #text = "hello!nice to meet you!"
         """合成语音（非流式，返回完整音频）"""
         if not self._ensure_pipeline():
             raise Exception("Kokoro未初始化")
@@ -89,6 +89,8 @@ class KokoroProvider(BaseTTSProvider):
             # 转换为WAV格式的字节数据
             wav_buffer = io.BytesIO()
             sf.write(wav_buffer, audio_data, self.sample_rate, format='WAV')
+
+            sf.write("/home/leedow/projects/test.wav", audio_data, self.sample_rate)
             wav_bytes = wav_buffer.getvalue()
             
             # 计算时长

@@ -4,7 +4,7 @@ LLM服务核心模块
 """
 
 import asyncio
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, AsyncIterator
 from datetime import datetime
 from loguru import logger
 
@@ -70,6 +70,31 @@ class LLMService:
         logger.warning("⚠️ 没有可用的LLM提供商")
         return None
     
+    def _record_conversation(self, client_id: Optional[str], prompt: str, response: Dict[str, Any], start_time: datetime):
+        if not client_id:
+            return
+
+        if client_id not in self.conversation_history:
+            self.conversation_history[client_id] = []
+
+        self.conversation_history[client_id].extend([
+            {
+                "role": "user",
+                "content": prompt,
+                "timestamp": start_time.isoformat()
+            },
+            {
+                "role": "assistant",
+                "content": response.get("content", ""),
+                "timestamp": datetime.now().isoformat(),
+                "model": response.get("model"),
+                "provider": response.get("provider")
+            }
+        ])
+
+        if len(self.conversation_history[client_id]) > 20:
+            self.conversation_history[client_id] = self.conversation_history[client_id][-20:]
+
     async def generate_response(self, prompt: str, client_id: Optional[str] = None) -> Dict[str, Any]:
         """生成回复"""
         start_time = datetime.now()
@@ -84,28 +109,7 @@ class LLMService:
             response = await provider.generate_response(prompt)
             
             # 记录对话历史
-            if client_id:
-                if client_id not in self.conversation_history:
-                    self.conversation_history[client_id] = []
-                
-                self.conversation_history[client_id].extend([
-                    {
-                        "role": "user",
-                        "content": prompt,
-                        "timestamp": start_time.isoformat()
-                    },
-                    {
-                        "role": "assistant", 
-                        "content": response["content"],
-                        "timestamp": datetime.now().isoformat(),
-                        "model": response["model"],
-                        "provider": response["provider"]
-                    }
-                ])
-                
-                # 限制历史记录长度
-                if len(self.conversation_history[client_id]) > 20:
-                    self.conversation_history[client_id] = self.conversation_history[client_id][-20:]
+            self._record_conversation(client_id, prompt, response, start_time)
             
             # 添加处理时间
             processing_time = (datetime.now() - start_time).total_seconds()
@@ -116,6 +120,46 @@ class LLMService:
         except Exception as e:
             logger.error(f"❌ LLM回复生成失败: {str(e)}")
             raise Exception(f"LLM回复生成失败: {str(e)}")
+
+    async def stream_response(self, prompt: str, client_id: Optional[str] = None) -> AsyncIterator[Dict[str, Any]]:
+        """流式生成回复，yield chunk 和最终响应"""
+        start_time = datetime.now()
+        provider = await self.select_best_provider()
+        if not provider:
+            raise Exception("没有可用的LLM提供商")
+
+        provider_name = provider.get_provider_name()
+        collected_chunks: List[str] = []
+
+        async for event in provider.stream_response(prompt):
+            content = event.get("content")
+            if content:
+                collected_chunks.append(content)
+                yield {
+                    "type": "chunk",
+                    "content": content,
+                    "model": provider.model,
+                    "provider": provider_name,
+                }
+
+            if event.get("is_final"):
+                response = event.get("metadata") or {}
+                if not response.get("content"):
+                    response["content"] = "".join(collected_chunks).strip()
+                response.setdefault("model", provider.model)
+                response.setdefault("provider", provider_name)
+                response.setdefault("tokens_used", int(len(response["content"].split()) * 1.3))
+
+                processing_time = (datetime.now() - start_time).total_seconds()
+                response["processing_time"] = processing_time
+
+                self._record_conversation(client_id, prompt, response, start_time)
+
+                yield {
+                    "type": "final",
+                    "response": response,
+                }
+                break
     
     def get_conversation_history(self, client_id: str) -> List[Dict]:
         """获取对话历史"""

@@ -9,6 +9,7 @@ from .gtts_provider import GTTSProvider
 from .pyttsx3_provider import Pyttsx3Provider
 from .mock_provider import MockTTSProvider
 from .kokoro_provider import KokoroProvider
+from .zipvoice_provider import ZipVoiceProvider
 from .factory import TTSProviderFactory
 
 __all__ = [
@@ -18,5 +19,6 @@ __all__ = [
     "Pyttsx3Provider",
     "MockTTSProvider",
     "KokoroProvider",
+    "ZipVoiceProvider",
     "TTSProviderFactory"
 ]

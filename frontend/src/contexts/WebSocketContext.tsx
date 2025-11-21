@@ -90,6 +90,33 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
   const [currentAudioItem, setCurrentAudioItem] = useState<AudioQueueItem | null>(null);
   const [audioPlayerState, setAudioPlayerState] = useState<PlayerState>(PlayerState.IDLE);
 
+  // 处理音频生成消息
+  const handleAudioGenerated = useCallback(async (message: AudioGeneratedMessage) => {
+    try {
+      const audioData = message.data?.audio_data;
+      const format = message.data?.format || 'mp3';
+      const text = message.data?.text || '';
+      const voice = message.data?.voice;
+
+      if (!audioData) {
+        console.warn('⚠️ 收到的音频数据为空');
+        return;
+      }
+
+      console.log(`📥 收到音频数据: ${text.substring(0, 50)}... (格式: ${format})`);
+
+      // 将音频加入播放队列
+      await audioQueuePlayer.enqueue({
+        audioData,
+        format,
+        text,
+        voice
+      });
+    } catch (error) {
+      console.error('❌ 处理音频生成消息失败:', error);
+    }
+  }, []);
+
   // 消息处理器
   const handleMessage = useCallback((message: BaseMessage) => {
     setLastMessage(message);
@@ -140,34 +167,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
         handleAudioGenerated(message as AudioGeneratedMessage);
         break;
     }
-  }, [maxMessages]);
-
-  // 处理音频生成消息
-  const handleAudioGenerated = useCallback(async (message: AudioGeneratedMessage) => {
-    try {
-      const audioData = message.data?.audio_data;
-      const format = message.data?.format || 'mp3';
-      const text = message.data?.text || '';
-      const voice = message.data?.voice;
-
-      if (!audioData) {
-        console.warn('⚠️ 收到的音频数据为空');
-        return;
-      }
-
-      console.log(`📥 收到音频数据: ${text.substring(0, 50)}... (格式: ${format})`);
-
-      // 将音频加入播放队列
-      await audioQueuePlayer.enqueue({
-        audioData,
-        format,
-        text,
-        voice
-      });
-    } catch (error) {
-      console.error('❌ 处理音频生成消息失败:', error);
-    }
-  }, []);
+  }, [maxMessages, handleAudioGenerated]);
 
   // 连接状态处理器
   const handleStateChange = useCallback((state: ConnectionState, error?: Error) => {

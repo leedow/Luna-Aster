@@ -12,6 +12,7 @@ from .gtts_provider import GTTSProvider
 from .pyttsx3_provider import Pyttsx3Provider
 from .mock_provider import MockTTSProvider
 from .kokoro_provider import KokoroProvider
+from .zipvoice_provider import ZipVoiceProvider
 
 
 class TTSProviderFactory:
@@ -23,7 +24,8 @@ class TTSProviderFactory:
         "gtts": GTTSProvider,
         "pyttsx3": Pyttsx3Provider,
         "mock": MockTTSProvider,
-        "kokoro": KokoroProvider
+        "kokoro": KokoroProvider,
+        "zipvoice": ZipVoiceProvider,
     }
     
     @classmethod

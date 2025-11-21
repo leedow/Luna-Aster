@@ -27,6 +27,7 @@ export class AudioQueuePlayer {
   private currentItem: AudioQueueItem | null = null;
   private state: PlayerState = PlayerState.IDLE;
   private isProcessing = false;
+  private recentItems: Set<string> = new Set(); // 用于去重，存储最近添加的音频ID
 
   // 回调函数
   private onPlayStart?: (item: AudioQueueItem) => void;
@@ -42,11 +43,28 @@ export class AudioQueuePlayer {
    * 添加音频到队列
    */
   async enqueue(item: Omit<AudioQueueItem, 'id' | 'addedAt'>): Promise<void> {
+    // 生成唯一ID（基于文本和音频数据的前几个字符）
+    const itemKey = `${item.text || ''}-${item.audioData?.substring(0, 50) || ''}`;
+    const itemHash = this.simpleHash(itemKey);
+    
+    // 检查是否最近已经添加过相同的音频（防止重复播放）
+    if (this.recentItems.has(itemHash)) {
+      console.warn(`⚠️ 音频已存在于队列中，跳过重复添加: ${item.text?.substring(0, 30) || 'unknown'}`);
+      return;
+    }
+    
     const queueItem: AudioQueueItem = {
       ...item,
       id: `audio-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       addedAt: new Date()
     };
+
+    // 添加到去重集合（保留最近100个）
+    this.recentItems.add(itemHash);
+    if (this.recentItems.size > 100) {
+      const firstItem = this.recentItems.values().next().value;
+      this.recentItems.delete(firstItem);
+    }
 
     this.queue.push(queueItem);
     console.log(`🎵 音频已加入队列 [${this.queue.length}]: ${queueItem.text?.substring(0, 30) || queueItem.id}...`);
@@ -57,6 +75,19 @@ export class AudioQueuePlayer {
     if (!this.isProcessing && this.state === PlayerState.IDLE) {
       await this.processQueue();
     }
+  }
+
+  /**
+   * 简单的哈希函数，用于生成音频的唯一标识
+   */
+  private simpleHash(str: string): string {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return hash.toString();
   }
 
   /**

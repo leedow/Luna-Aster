@@ -25,13 +25,27 @@ class TTSService:
         """初始化TTS提供商"""
         # 根据扁平配置创建提供商配置
         providers_config = [
+            # 默认首选：ZipVoice（HTTP API 提供商）
             {
-                "type": "kokoro",
-                "voice": "zf_001",
-                "lang_code": "z",  # 自动检测语言
-                "language": "zh-CN",
-                "rate": 1.0
+                "type": "zipvoice",
+                "endpoint": getattr(self.settings, "tts_zipvoice_endpoint", "http://localhost:8005/tts"),
+                "prompt_text": getattr(self.settings, "tts_zipvoice_prompt_text", None),
+                "prompt_wav_path": getattr(self.settings, "tts_zipvoice_prompt_wav_path", None),
+                "return_metrics": getattr(self.settings, "tts_zipvoice_return_metrics", False),
+                "raw_evaluation": getattr(self.settings, "tts_zipvoice_raw_evaluation", False),
+                "voice": self.settings.tts_voice,
+                "language": self.settings.character_language,
+                "rate": 1.0,
             },
+            # 备用：Kokoro 本地 TTS
+            # {
+            #     "type": "kokoro",
+            #     "voice": "zf_001",
+            #     "lang_code": "z",  # 自动检测语言
+            #     "language": "zh-CN",
+            #     "rate": 1.0
+            # },
+            # 其他备选（如需启用可取消注释）
             # {
             #     "type": "edge_tts",
             #     "voice": self.settings.tts_voice,
@@ -63,7 +77,7 @@ class TTSService:
     async def select_best_provider(self) -> Optional[BaseTTSProvider]:
         """选择最佳可用的提供商"""
         # 按优先级顺序检查提供商
-        priority_order = ["KokoroProvider"]
+        priority_order = ["ZipVoiceProvider"]
         
         # 首先按优先级顺序查找
         for priority_class in priority_order:

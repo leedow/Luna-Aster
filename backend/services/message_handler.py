@@ -14,7 +14,7 @@
 """
 
 import asyncio
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from datetime import datetime
 from loguru import logger
 
@@ -30,6 +30,7 @@ from core.llm.llm_service import LLMService
 from core.asr.asr_service import ASRService
 from core.tts.tts_service import TTSService
 from core.vad.vad_service import VADService
+from utils.text_slicer import StreamingTextSlicer
 
 class MessageHandler:
     """消息处理器 - 流水线模式"""
@@ -266,26 +267,93 @@ class MessageHandler:
                 try:
                     text = asr_item["text"]
                     
-                    # 调用LLM生成回复
+                    # 调用LLM生成流式回复
                     start_time = datetime.now()
-                    response = await self.llm_service.generate_response(
+                    slicer = StreamingTextSlicer()
+                    final_response = None
+                    chunk_index = 0
+                    last_chunk_meta: Dict[str, Optional[str]] = {
+                        "provider": None,
+                        "model": None,
+                    }
+                    emitted_text_parts: List[str] = []
+
+                    async for event in self.llm_service.stream_response(
                         text,
                         client_id=client_id
-                    )
-                    processing_time = (datetime.now() - start_time).total_seconds()
+                    ):
+                        if event["type"] == "chunk":
+                            chunk_text = event.get("content", "")
+                            if not chunk_text:
+                                continue
+
+                            last_chunk_meta["provider"] = event.get("provider") or last_chunk_meta["provider"]
+                            last_chunk_meta["model"] = event.get("model") or last_chunk_meta["model"]
+
+                            slices = slicer.feed(chunk_text)
+                            for idx, sliced in enumerate(slices):
+                                chunk_index += 1
+                                emitted_text_parts.append(sliced)
+                                await queue_out.put({
+                                    "text": sliced,
+                                    "metadata": {
+                                        "provider": last_chunk_meta["provider"],
+                                        "model": last_chunk_meta["model"],
+                                        "llm_chunk_index": chunk_index,
+                                        "is_final_chunk": False,
+                                    }
+                                })
+
+                        elif event["type"] == "final":
+                            final_response = event.get("response")
+                            break
+
+                    # flush remaining文本
+                    remaining_slices = slicer.flush()
+                    for i, sliced in enumerate(remaining_slices):
+                        chunk_index += 1
+                        emitted_text_parts.append(sliced)
+                        await queue_out.put({
+                            "text": sliced,
+                            "metadata": {
+                                "provider": last_chunk_meta["provider"],
+                                "model": last_chunk_meta["model"],
+                                "llm_chunk_index": chunk_index,
+                                "is_final_chunk": i == len(remaining_slices) - 1,
+                            }
+                        })
+
+                    if not final_response:
+                        # 如果流式过程中未拿到最终响应，构造一个兜底响应
+                        combined_text = "".join(emitted_text_parts).strip()
+                        final_response = {
+                            "content": combined_text,
+                            "model": last_chunk_meta["model"],
+                            "provider": last_chunk_meta["provider"],
+                            "tokens_used": len(combined_text.split()),
+                            "processing_time": (datetime.now() - start_time).total_seconds(),
+                        }
                     
-                    reply_text = response.get("content", "").strip()
+                    reply_text = final_response.get("content", "").strip()
+                    processing_time = final_response.get("processing_time", (datetime.now() - start_time).total_seconds())
+
+                    if chunk_index == 0 and reply_text:
+                        chunk_index += 1
+                        await queue_out.put({
+                            "text": reply_text,
+                            "metadata": {
+                                "provider": final_response.get("provider"),
+                                "model": final_response.get("model"),
+                                "llm_chunk_index": chunk_index,
+                                "is_final_chunk": True,
+                            }
+                        })
+                    
                     if reply_text:
                         logger.info(f"🤖 [LLM] 回复: {reply_text[:50]}... (耗时: {processing_time:.2f}s)")
                         
                         # 发送LLM回复给前端
-                        await self._send_llm_result(client_id, reply_text, response, processing_time)
-                        
-                        # 传递给TTS队列
-                        await queue_out.put({
-                            "text": reply_text,
-                            "metadata": response
-                        })
+                        await self._send_llm_result(client_id, reply_text, final_response, processing_time)
                 
                 except Exception as e:
                     logger.error(f"❌ [LLM Worker] 处理失败: {str(e)}")

@@ -3,10 +3,12 @@ Qwen3 LLM 提供商
 支持 Qwen3-VL 系列模型（基于 ModelScope）
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, AsyncIterator
 from loguru import logger
 import asyncio
 import torch
+from transformers import TextIteratorStreamer
+from functools import partial
 
 from .base import BaseLLMProvider
 
@@ -16,8 +18,8 @@ class Qwen3Provider(BaseLLMProvider):
     
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.model_name = config.get("model", "Qwen/Qwen3-VL-2B-Instruct")
-        self.dtype = torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32
+        self.model_name = config.get("model", "Qwen/Qwen3-VL-4B-Instruct")
+        self.dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
         self.device_map = config.get("device_map", "auto")
         self.attn_implementation = config.get("attn_implementation")  # 可选：flash_attention_2
         self.max_new_tokens = config.get("max_new_tokens", 512)
@@ -77,9 +79,24 @@ class Qwen3Provider(BaseLLMProvider):
             logger.warning(f"Qwen3Provider: modelscope 未安装或不可用: {e}")
             return False
     
-    def _generate_sync(self, messages: list, max_new_tokens: int) -> str:
-        """同步执行模型推理（在线程池中调用，避免阻塞事件循环）"""
-        # 准备输入
+    def _build_messages(self, prompt: str, **kwargs) -> List[Dict[str, Any]]:
+        system_prompt = kwargs.get(
+            "system_prompt",
+            "你是Luna，一个友善、聪明、有趣的虚拟助手。请用自然、亲切的语调回复用户。请用简短的话语回复每次对话，并在合适的情况下提问，避免把天聊死",
+        )
+
+        full_prompt = f"{system_prompt}\n\n用户: {prompt}\n助手:"
+
+        return [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": full_prompt}
+                ]
+            }
+        ]
+
+    def _prepare_inputs(self, messages: list):
         inputs = self._processor.apply_chat_template(
             messages,
             tokenize=True,
@@ -87,7 +104,11 @@ class Qwen3Provider(BaseLLMProvider):
             return_dict=True,
             return_tensors="pt"
         )
-        inputs = inputs.to(self._model.device)
+        return inputs.to(self._model.device)
+
+    def _generate_sync(self, messages: list, max_new_tokens: int) -> str:
+        """同步执行模型推理（在线程池中调用，避免阻塞事件循环）"""
+        inputs = self._prepare_inputs(messages)
         
         # 推理：生成输出
         with torch.no_grad():
@@ -111,28 +132,16 @@ class Qwen3Provider(BaseLLMProvider):
         
         return output_text[0] if output_text else ""
     
+    def _estimate_tokens(self, text: str) -> int:
+        return int(len(text.split()) * 1.3)
+
     async def generate_response(self, prompt: str, **kwargs) -> Dict[str, Any]:
         """生成回复"""
         if not self._model or not self._processor:
             raise Exception("Qwen3 模型未加载")
         
         try:
-            # 构建消息（纯文本模式）
-            # Qwen3 支持多模态，但这里我们只使用文本
-            # 注意：Qwen3 可能不支持 system 角色，所以将系统提示合并到用户消息中
-            system_prompt = kwargs.get("system_prompt", "你是Luna，一个友善、聪明、有趣的虚拟助手。请用自然、亲切的语调回复用户。请用简短的话语回复每次对话，不要重复之前的内容，必须回复中文。")
-            
-            # 构建完整的用户提示（包含系统提示）
-            full_prompt = f"{system_prompt}\n\n用户: {prompt}\n助手:"
-            
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": full_prompt}
-                    ]
-                }
-            ]
+            messages = self._build_messages(prompt, **kwargs)
             
             # 获取 max_new_tokens（优先使用 kwargs，否则使用配置）
             max_new_tokens = kwargs.get("max_new_tokens", self.max_new_tokens)
@@ -148,7 +157,7 @@ class Qwen3Provider(BaseLLMProvider):
             
             # 计算 token 数量（近似值）
             # 注意：Qwen3 没有直接返回 token 数量，这里使用文本长度估算
-            tokens_used = len(content.split()) * 1.3  # 粗略估算
+            tokens_used = self._estimate_tokens(content)  # 粗略估算
             
             return {
                 "content": content,
@@ -160,4 +169,81 @@ class Qwen3Provider(BaseLLMProvider):
         except Exception as e:
             logger.error(f"❌ Qwen3 生成回复失败: {str(e)}")
             raise Exception(f"Qwen3 生成回复失败: {str(e)}")
+
+    @staticmethod
+    def _next_from_streamer(streamer: TextIteratorStreamer) -> Optional[str]:
+        try:
+            return next(streamer)
+        except StopIteration:
+            return None
+
+    async def stream_response(self, prompt: str, **kwargs) -> AsyncIterator[Dict[str, Any]]:
+        """流式生成回复"""
+        if not self._model or not self._processor:
+            raise Exception("Qwen3 模型未加载")
+
+        messages = self._build_messages(prompt, **kwargs)
+        max_new_tokens = kwargs.get("max_new_tokens", self.max_new_tokens)
+
+        tokenizer = getattr(self._processor, "tokenizer", None) or self._processor
+        streamer = TextIteratorStreamer(
+            tokenizer,
+            skip_prompt=True,
+            skip_special_tokens=True,
+        )
+
+        inputs = self._prepare_inputs(messages)
+        generation_kwargs = {
+            **inputs,
+            "max_new_tokens": max_new_tokens,
+            "streamer": streamer,
+        }
+
+        loop = asyncio.get_running_loop()
+        generation_future = loop.run_in_executor(
+            None,
+            partial(self._generate_with_streamer, generation_kwargs),
+        )
+
+        collected_chunks: List[str] = []
+
+        try:
+            while True:
+                chunk = await loop.run_in_executor(None, self._next_from_streamer, streamer)
+                if chunk is None:
+                    break
+
+                if not chunk:
+                    continue
+
+                collected_chunks.append(chunk)
+                yield {
+                    "content": chunk,
+                    "is_final": False,
+                    "metadata": {
+                        "model": self.model_name,
+                        "provider": "qwen3",
+                    },
+                }
+        finally:
+            await generation_future
+
+        full_text = "".join(collected_chunks).strip()
+        tokens_used = self._estimate_tokens(full_text)
+        metadata = {
+            "content": full_text,
+            "model": self.model_name,
+            "tokens_used": int(tokens_used),
+            "provider": "qwen3",
+        }
+
+        yield {
+            "content": None,
+            "is_final": True,
+            "metadata": metadata,
+        }
+
+    def _generate_with_streamer(self, generation_kwargs: Dict[str, Any]) -> None:
+        with torch.no_grad():
+            self._model.generate(**generation_kwargs)
 

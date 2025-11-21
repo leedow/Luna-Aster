@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     llm_provider: str = Field(default="qwen3", env="LLM_PROVIDER")  # qwen3, openai, anthropic, local
     # Qwen3 配置
     qwen3_enabled: bool = Field(default=True, env="QWEN3_ENABLED")
-    qwen3_model: str = Field(default="Qwen/Qwen3-VL-2B-Instruct", env="QWEN3_MODEL")
+    qwen3_model: str = Field(default="Qwen/Qwen3-VL-4B-Instruct", env="QWEN3_MODEL")
     qwen3_dtype: str = Field(default="bfloat16", env="QWEN3_DTYPE")  # auto, float16, bfloat16
     qwen3_device_map: str = Field(default="auto", env="QWEN3_DEVICE_MAP")  # auto, cpu, cuda
     qwen3_attn_implementation: Optional[str] = Field(default=None, env="QWEN3_ATTN_IMPLEMENTATION")  # flash_attention_2
@@ -93,10 +93,17 @@ class Settings(BaseSettings):
     fast_whisper_silence_threshold: float = Field(default=0.01, env="FAST_WHISPER_SILENCE_THRESHOLD")
     
     # TTS 配置
-    tts_provider: str = Field(default="edge", env="TTS_PROVIDER")  # edge, gtts, pyttsx3
+    tts_provider: str = Field(default="zipvoice", env="TTS_PROVIDER")  # zipvoice, edge, gtts, pyttsx3, kokoro
     tts_voice: str = Field(default="zh-CN-XiaoxiaoNeural", env="TTS_VOICE")
     tts_rate: str = Field(default="+0%", env="TTS_RATE")
     tts_pitch: str = Field(default="+0Hz", env="TTS_PITCH")
+
+    # ZipVoice 相关配置（HTTP API）
+    tts_zipvoice_endpoint: str = Field(default="http://localhost:8005/tts", env="TTS_ZIPVOICE_ENDPOINT")
+    tts_zipvoice_prompt_text: Optional[str] = Field(default=None, env="TTS_ZIPVOICE_PROMPT_TEXT")
+    tts_zipvoice_prompt_wav_path: Optional[str] = Field(default=None, env="TTS_ZIPVOICE_PROMPT_WAV_PATH")
+    tts_zipvoice_return_metrics: bool = Field(default=False, env="TTS_ZIPVOICE_RETURN_METRICS")
+    tts_zipvoice_raw_evaluation: bool = Field(default=False, env="TTS_ZIPVOICE_RAW_EVALUATION")
     
     # 音频配置
     audio_sample_rate: int = Field(default=16000, env="AUDIO_SAMPLE_RATE")
@@ -267,6 +274,16 @@ class Settings(BaseSettings):
         """获取 TTS 配置"""
         return {
             "provider": self.tts_provider,
+            "zipvoice": {
+                "enabled": True,
+                "endpoint": self.tts_zipvoice_endpoint,
+                "prompt_text": self.tts_zipvoice_prompt_text,
+                "prompt_wav_path": self.tts_zipvoice_prompt_wav_path,
+                "return_metrics": self.tts_zipvoice_return_metrics,
+                "raw_evaluation": self.tts_zipvoice_raw_evaluation,
+                "language": self.character_language,
+                "voice": self.tts_voice,
+            },
             "edge": {
                 "enabled": True,
                 "voice": self.tts_voice,

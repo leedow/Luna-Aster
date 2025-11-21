@@ -4,7 +4,7 @@ LLM 提供商基类
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Dict, Any, AsyncIterator
 
 
 class BaseLLMProvider(ABC):
@@ -52,3 +52,27 @@ class BaseLLMProvider(ABC):
             str: 提供商名称
         """
         return self.__class__.__name__.replace("Provider", "").lower()
+
+    async def stream_response(self, prompt: str, **kwargs) -> AsyncIterator[Dict[str, Any]]:
+        """
+        默认流式实现：直接一次性返回 generate_response 的结果。
+        子类可覆盖该方法以提供真正的流式输出。
+        """
+        response = await self.generate_response(prompt, **kwargs)
+        content = response.get("content", "")
+
+        if content:
+            yield {
+                "content": content,
+                "is_final": False,
+                "metadata": {
+                    "model": response.get("model"),
+                    "provider": response.get("provider"),
+                },
+            }
+
+        yield {
+            "content": None,
+            "is_final": True,
+            "metadata": response,
+        }
