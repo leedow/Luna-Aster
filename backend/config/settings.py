@@ -24,11 +24,13 @@ class Settings(BaseSettings):
     llm_provider: str = Field(default="qwen3", env="LLM_PROVIDER")  # qwen3, openai, anthropic, local
     # Qwen3 配置
     qwen3_enabled: bool = Field(default=True, env="QWEN3_ENABLED")
-    qwen3_model: str = Field(default="Qwen/Qwen3-VL-4B-Instruct", env="QWEN3_MODEL")
+    qwen3_model: str = Field(default="/home/leedow/.cache/modelscope/hub/models/Qwen/Qwen3-4B-Instruct-2507-FP8", env="QWEN3_MODEL")
     qwen3_dtype: str = Field(default="bfloat16", env="QWEN3_DTYPE")  # auto, float16, bfloat16
     qwen3_device_map: str = Field(default="auto", env="QWEN3_DEVICE_MAP")  # auto, cpu, cuda
     qwen3_attn_implementation: Optional[str] = Field(default=None, env="QWEN3_ATTN_IMPLEMENTATION")  # flash_attention_2
     qwen3_max_new_tokens: int = Field(default=512, env="QWEN3_MAX_NEW_TOKENS")
+    qwen3_gpu_memory_utilization: float = Field(default=0.6, env="QWEN3_GPU_MEMORY_UTILIZATION")
+    qwen3_max_model_len: int = Field(default=8192, env="QWEN3_MAX_MODEL_LEN")
     # OpenAI 配置
     openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-3.5-turbo", env="OPENAI_MODEL")

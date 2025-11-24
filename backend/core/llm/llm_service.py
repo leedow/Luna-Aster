@@ -36,6 +36,8 @@ class LLMService:
                 "device_map": self.settings.qwen3_device_map,
                 "attn_implementation": self.settings.qwen3_attn_implementation,
                 "max_new_tokens": self.settings.qwen3_max_new_tokens,
+                "gpu_memory_utilization": getattr(self.settings, "qwen3_gpu_memory_utilization", 0.95),
+                "max_model_len": getattr(self.settings, "qwen3_max_model_len", 8192),
             },
             # "openai": {
             #     "api_key": self.settings.openai_api_key,
@@ -105,8 +107,11 @@ class LLMService:
             if not provider:
                 raise Exception("没有可用的LLM提供商")
             
+            # 获取会话历史，供 provider 进行前缀缓存复用
+            history = self.get_conversation_history(client_id) if client_id else []
+
             # 生成回复
-            response = await provider.generate_response(prompt)
+            response = await provider.generate_response(prompt, history=history)
             
             # 记录对话历史
             self._record_conversation(client_id, prompt, response, start_time)
@@ -131,7 +136,10 @@ class LLMService:
         provider_name = provider.get_provider_name()
         collected_chunks: List[str] = []
 
-        async for event in provider.stream_response(prompt):
+        # 获取会话历史，供 provider 进行前缀缓存复用
+        history = self.get_conversation_history(client_id) if client_id else []
+
+        async for event in provider.stream_response(prompt, history=history):
             content = event.get("content")
             if content:
                 collected_chunks.append(content)
